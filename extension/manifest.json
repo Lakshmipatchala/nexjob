@@ -1,0 +1,50 @@
+﻿{
+  "manifest_version": 3,
+  "name": "NexJob Autofill",
+  "version": "1.0.0",
+  "description": "AI-powered job application autofill for LinkedIn, Indeed, Greenhouse, Lever and more.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://*.greenhouse.io/*",
+    "https://boards.greenhouse.io/*",
+    "https://jobs.lever.co/*",
+    "https://*.myworkdayjobs.com/*",
+    "https://*.workday.com/*",
+    "https://*.icims.com/*",
+    "https://*.ashbyhq.com/*",
+    "https://*.taleo.net/*",
+    "https://*.smartrecruiters.com/*",
+    "https://www.linkedin.com/*",
+    "https://www.indeed.com/*",
+    "https://nexjob-sigma.vercel.app/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.greenhouse.io/*",
+        "https://boards.greenhouse.io/*",
+        "https://jobs.lever.co/*",
+        "https://*.myworkdayjobs.com/*",
+        "https://*.icims.com/*",
+        "https://*.ashbyhq.com/*",
+        "https://*.taleo.net/*",
+        "https://*.smartrecruiters.com/*",
+        "https://www.linkedin.com/jobs/*",
+        "https://www.indeed.com/*"
+      ],
+      "js": ["content_script.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "NexJob Autofill"
+  }
+}

@@ -1,0 +1,130 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NexJob Autofill</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { width: 320px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #06060f; color: #f0eff8; }
+
+    .header { padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.07); display: flex; align-items: center; gap: 10px; }
+    .logo { font-size: 18px; font-weight: 700; background: linear-gradient(135deg, #8b5cf6, #a855f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; margin-left: auto; }
+    .status-dot.connected { background: #22c55e; }
+    .status-dot.disconnected { background: #f87171; }
+
+    .section { padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.07); }
+    .section-title { font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: rgba(255,255,255,0.3); margin-bottom: 12px; }
+
+    /* Engine selector */
+    .engine-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .engine-btn { padding: 10px 8px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04); color: rgba(255,255,255,0.7); font-size: 12px; font-weight: 600; cursor: pointer; text-align: center; transition: all 0.15s; }
+    .engine-btn.active { background: rgba(124,110,245,0.2); border-color: #7c3aed; color: #a78bfa; }
+    .engine-icon { font-size: 20px; display: block; margin-bottom: 4px; }
+    .engine-label { font-size: 11px; }
+    .engine-desc { font-size: 10px; color: rgba(255,255,255,0.4); margin-top: 2px; }
+
+    /* Fill button */
+    .fill-btn { width: 100%; padding: 12px; border-radius: 10px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.15s; margin-top: 0; }
+    .fill-btn.backend { background: linear-gradient(135deg, #059669, #10b981); color: white; }
+    .fill-btn.claude { background: linear-gradient(135deg, #7c3aed, #a855f7); color: white; }
+    .fill-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    /* Status message */
+    .status-msg { padding: 10px 12px; border-radius: 8px; font-size: 12px; margin-top: 10px; display: none; }
+    .status-msg.show { display: block; }
+    .status-msg.loading { background: rgba(124,110,245,0.1); color: #a78bfa; border: 1px solid rgba(124,110,245,0.2); }
+    .status-msg.done { background: rgba(34,197,94,0.1); color: #4ade80; border: 1px solid rgba(34,197,94,0.2); }
+    .status-msg.error { background: rgba(239,68,68,0.1); color: #f87171; border: 1px solid rgba(239,68,68,0.2); }
+    .status-msg.unsupported { background: rgba(245,166,35,0.1); color: #fbbf24; border: 1px solid rgba(245,166,35,0.2); }
+
+    /* Profile preview */
+    .profile-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 12px; }
+    .profile-row:last-child { border-bottom: none; }
+    .profile-key { color: rgba(255,255,255,0.4); width: 80px; flex-shrink: 0; }
+    .profile-val { color: rgba(255,255,255,0.8); }
+
+    /* Login section */
+    .login-section { padding: 20px; text-align: center; }
+    .login-btn { display: block; width: 100%; padding: 12px; background: linear-gradient(135deg, #7c3aed, #a855f7); color: white; border: none; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; text-decoration: none; }
+    .login-hint { font-size: 12px; color: rgba(255,255,255,0.4); margin-top: 10px; }
+
+    .footer { padding: 12px 20px; font-size: 11px; color: rgba(255,255,255,0.3); text-align: center; }
+
+    .supported-list { display: flex; flex-wrap: wrap; gap: 4px; }
+    .supported-tag { font-size: 10px; padding: 2px 8px; border-radius: 20px; background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.4); }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <span class="logo">NexJob</span>
+  <span id="ats-detected" style="font-size:12px;color:rgba(255,255,255,0.4);">Detecting page...</span>
+  <div class="status-dot disconnected" id="status-dot"></div>
+</div>
+
+<div id="main-content">
+
+  <!-- Engine selector -->
+  <div class="section">
+    <div class="section-title">Autofill Engine</div>
+    <div class="engine-grid">
+      <div class="engine-btn active" id="btn-backend" onclick="selectEngine('backend')">
+        <span class="engine-icon">⚡</span>
+        <div class="engine-label">Backend</div>
+        <div class="engine-desc">Fast · Free · Profile data</div>
+      </div>
+      <div class="engine-btn" id="btn-claude" onclick="selectEngine('claude')">
+        <span class="engine-icon">🤖</span>
+        <div class="engine-label">Claude AI</div>
+        <div class="engine-desc">Smart · Tailored answers</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Fill button -->
+  <div class="section">
+    <button class="fill-btn backend" id="fill-btn" onclick="runFill()">
+      ⚡ Autofill This Page
+    </button>
+    <div class="status-msg" id="status-msg"></div>
+  </div>
+
+  <!-- Profile preview -->
+  <div class="section" id="profile-section" style="display:none">
+    <div class="section-title">Your Profile</div>
+    <div id="profile-rows"></div>
+  </div>
+
+  <!-- Supported sites -->
+  <div class="section">
+    <div class="section-title">Supported Sites</div>
+    <div class="supported-list">
+      <span class="supported-tag">LinkedIn</span>
+      <span class="supported-tag">Indeed</span>
+      <span class="supported-tag">Greenhouse</span>
+      <span class="supported-tag">Lever</span>
+      <span class="supported-tag">Workday</span>
+      <span class="supported-tag">iCIMS</span>
+      <span class="supported-tag">Ashby</span>
+    </div>
+  </div>
+
+</div>
+
+<div id="login-content" style="display:none">
+  <div class="login-section">
+    <p style="font-size:13px;color:rgba(255,255,255,0.6);margin-bottom:16px;">Login to NexJob to use autofill</p>
+    <a href="https://nexjob-sigma.vercel.app/login" target="_blank" class="login-btn">
+      Login to NexJob
+    </a>
+    <p class="login-hint">After logging in, come back and click the extension icon again</p>
+  </div>
+</div>
+
+<div class="footer">NexJob Autofill v1.0</div>
+
+<script src="popup.js"></script>
+</body>
+</html>
