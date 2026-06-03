@@ -1,65 +1,41 @@
-import Image from "next/image";
+﻿import { createServerSupabaseClient } from "@/lib/supabase-server"
+import Link from "next/link"
 
-export default function Home() {
+export default async function LandingPage() {
+  let dbStatus = "connecting..."
+  try {
+    const supabase = await createServerSupabaseClient()
+    const { error } = await supabase.from("jobs").select("count").single()
+    dbStatus = error ? "connected (no data yet)" : "connected"
+  } catch {
+    dbStatus = "check .env.local keys"
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
-  );
+    <main style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"24px",padding:"32px",textAlign:"center",background:"hsl(224 71% 4%)"}}>
+      <div>
+        <h1 style={{fontSize:"48px",fontWeight:"700",background:"linear-gradient(135deg, #8b5cf6, #a855f7)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",letterSpacing:"-1px"}}>
+          NexJob
+        </h1>
+        <p style={{color:"hsl(215 20% 65%)",fontSize:"18px",marginTop:"8px"}}>
+          AI-powered job portal
+        </p>
+      </div>
+      <div style={{background:"hsl(224 71% 6%)",border:"1px solid hsl(216 34% 17%)",borderRadius:"12px",padding:"16px 24px",fontSize:"14px"}}>
+        <span style={{color:"hsl(215 20% 65%)"}}>Supabase: </span>
+        <span style={{color:"#22c55e",fontWeight:"600"}}>{dbStatus}</span>
+      </div>
+      <div style={{display:"flex",gap:"16px",flexWrap:"wrap",justifyContent:"center"}}>
+        <Link href="/signup" style={{background:"#7c3aed",color:"white",padding:"12px 24px",borderRadius:"10px",fontSize:"14px",fontWeight:"600",textDecoration:"none"}}>
+          Get started
+        </Link>
+        <Link href="/login" style={{border:"1px solid hsl(216 34% 17%)",color:"hsl(213 31% 91%)",padding:"12px 24px",borderRadius:"10px",fontSize:"14px",fontWeight:"600",textDecoration:"none"}}>
+          Sign in
+        </Link>
+      </div>
+      <p style={{fontSize:"12px",color:"hsl(215 20% 45%)"}}>
+        Phase 2 complete -- Database connected
+      </p>
+    </main>
+  )
 }
