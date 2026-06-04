@@ -6,7 +6,6 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const search = searchParams.get("search") || ""
     const source = searchParams.get("source") || ""
-    const showAll = searchParams.get("showAll") === "true"
 
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -16,17 +15,12 @@ export async function GET(request: Request) {
     let query = supabase
       .from("jobs")
       .select("*")
+      .eq("is_active", true)
       .order("posted_at", { ascending: false })
-      .limit(100)
-
-    // By default only show active jobs
-    // showAll=true shows all including expired (for admin)
-    if (!showAll) {
-      query = query.eq("is_active", true)
-    }
+      .limit(1000)
 
     if (search) query = query.ilike("title", `%${search}%`)
-    if (source) query = query.eq("source", source)
+    if (source && source !== "all") query = query.eq("source", source)
 
     const { data, error } = await query
     if (error) throw error
