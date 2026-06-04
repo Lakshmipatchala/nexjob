@@ -33,9 +33,15 @@ export default function DashboardPage() {
 
     // Load recent jobs
     fetch("/api/jobs/list?search=").then(r => r.json()).then(d => setRecentJobs((d.jobs || []).slice(0, 6)))
+
+    // Load AI recommendations
+    fetch("/api/recommendations", { headers: { "Authorization": `Bearer ${data.session.access_token}` } })
+      .then(r => r.json())
+      .then(d => { if (d.recommendations) setRecommendations(d.recommendations) })
   }, [])
 
   const card = { background:"hsl(224 71% 6%)", border:"1px solid hsl(216 34% 17%)", borderRadius:"12px", padding:"20px" }
+  const [recommendations, setRecommendations] = useState<any[]>([])
   const firstName = user?.user_metadata?.full_name?.split(" ")[0] || user?.email?.split("@")[0] || "there"
 
   return (
@@ -101,6 +107,29 @@ export default function DashboardPage() {
                 <div style={{fontSize:"12px", color:"hsl(215 20% 65%)", marginBottom:"10px"}}>{job.company} · {job.location}</div>
                 <button onClick={()=>window.open(job.source_url,"_blank")}
                   style={{width:"100%", background:"#7c3aed", color:"white", padding:"7px", borderRadius:"8px", fontSize:"12px", fontWeight:"600", border:"none", cursor:"pointer"}}>
+                  Apply Now →
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {/* AI Recommendations */}
+      {recommendations.length > 0 && (
+        <div style={{marginTop:"28px"}}>
+          <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"16px"}}>
+            <h2 style={{fontSize:"18px", fontWeight:"600", color:"hsl(213 31% 91%)", margin:"0"}}>
+              🤖 AI Recommended for You
+            </h2>
+          </div>
+          <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(280px, 1fr))", gap:"12px"}}>
+            {recommendations.map((job: any) => (
+              <div key={job.id} style={{background:"hsl(224 71% 6%)", border:"1px solid rgba(124,110,245,0.3)", borderRadius:"12px", padding:"20px"}}>
+                <div style={{fontSize:"14px", fontWeight:"600", color:"hsl(213 31% 91%)", marginBottom:"4px"}}>{job.title}</div>
+                <div style={{fontSize:"12px", color:"hsl(215 20% 65%)", marginBottom:"8px"}}>{job.company}</div>
+                <div style={{fontSize:"12px", color:"#a78bfa", marginBottom:"10px", fontStyle:"italic"}}>✨ {job.reason}</div>
+                <button onClick={()=>window.open(job.source_url,"_blank")}
+                  style={{width:"100%", background:"linear-gradient(135deg, #7c3aed, #a855f7)", color:"white", padding:"7px", borderRadius:"8px", fontSize:"12px", fontWeight:"600", border:"none", cursor:"pointer"}}>
                   Apply Now →
                 </button>
               </div>
