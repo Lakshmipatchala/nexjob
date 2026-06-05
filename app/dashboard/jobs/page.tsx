@@ -64,6 +64,7 @@ export default function JobsPage() {
   const [typeFilter, setTypeFilter] = useState("all")
   const [sortBy, setSortBy] = useState("newest")
   const [currentPage, setCurrentPage] = useState(1)
+  const [lastUpdated, setLastUpdated] = useState("")
 
   useEffect(() => { initUser() }, [])
   useEffect(() => { setCurrentPage(1) }, [search, workModeFilter, typeFilter, sortBy])
@@ -252,6 +253,7 @@ export default function JobsPage() {
           <p style={{ color: "hsl(215 20% 65%)", fontSize: "13px", margin: "0" }}>
             {filteredJobs.length} active jobs
             {savedIds.size > 0 && <span style={{ marginLeft: "10px", color: "#a78bfa" }}>· {savedIds.size} saved</span>}
+            {lastUpdated && <span style={{ marginLeft: "10px", color: "hsl(215 20% 40%)", fontSize: "12px" }}>· Last updated {lastUpdated}</span>}
           </p>
         </div>
         <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" as const }}>

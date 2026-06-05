@@ -219,6 +219,77 @@ export async function GET(request: Request) {
       console.log(`USAJobs: ${allJobs.length} total`)
     } catch (e) { console.error("USAJobs error:", e) }
 
+    // Source 8 — Greenhouse (direct company job boards - free unlimited)
+    try {
+      const companies = ["airbnb", "stripe", "notion", "figma", "vercel", "anthropic", "openai", "databricks", "snowflake", "confluent", "mongodb", "elastic", "hashicorp", "cloudflare", "datadog"]
+      for (const company of companies) {
+        try {
+          const res = await fetch(`https://boards-api.greenhouse.io/v1/boards/${company}/jobs?content=true`)
+          const data = await res.json()
+          const keyword = query.toLowerCase()
+          for (const job of (data.jobs || []).filter((j: any) =>
+            j.title?.toLowerCase().includes(keyword) ||
+            j.departments?.some((d: any) => d.name?.toLowerCase().includes("engineer") || d.name?.toLowerCase().includes("data"))
+          ).slice(0, 5)) {
+            allJobs.push({
+              title: job.title,
+              company: company.charAt(0).toUpperCase() + company.slice(1),
+              company_logo: null,
+              location: job.location?.name || "Remote",
+              work_mode: job.location?.name?.toLowerCase().includes("remote") ? "remote" : "onsite",
+              job_type: "full_time",
+              salary_min: null,
+              salary_max: null,
+              source: "greenhouse",
+              source_url: job.absolute_url,
+              description: job.content?.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 5000) || "",
+              external_id: `greenhouse_${job.id}`,
+              posted_at: job.updated_at || new Date().toISOString(),
+              is_active: true,
+              expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+            })
+          }
+        } catch (e) {}
+      }
+      console.log(`Greenhouse: ${allJobs.length} total`)
+    } catch (e) { console.error("Greenhouse error:", e) }
+
+    // Source 9 — Lever (direct company job boards - free unlimited)
+    try {
+      const leverCompanies = ["netflix", "uber", "lyft", "pinterest", "reddit", "squarespace", "duolingo", "carta", "plaid", "brex"]
+      for (const company of leverCompanies) {
+        try {
+          const res = await fetch(`https://api.lever.co/v0/postings/${company}?mode=json`)
+          const jobs = await res.json()
+          const keyword = query.toLowerCase()
+          for (const job of (Array.isArray(jobs) ? jobs : []).filter((j: any) =>
+            j.text?.toLowerCase().includes(keyword) ||
+            j.categories?.team?.toLowerCase().includes("engineer") ||
+            j.categories?.team?.toLowerCase().includes("data")
+          ).slice(0, 5)) {
+            allJobs.push({
+              title: job.text,
+              company: company.charAt(0).toUpperCase() + company.slice(1),
+              company_logo: null,
+              location: job.categories?.location || "Remote",
+              work_mode: job.categories?.location?.toLowerCase().includes("remote") ? "remote" : "onsite",
+              job_type: "full_time",
+              salary_min: null,
+              salary_max: null,
+              source: "lever",
+              source_url: job.hostedUrl,
+              description: job.descriptionPlain?.slice(0, 5000) || "",
+              external_id: `lever_${job.id}`,
+              posted_at: job.createdAt ? new Date(job.createdAt).toISOString() : new Date().toISOString(),
+              is_active: true,
+              expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+            })
+          }
+        } catch (e) {}
+      }
+      console.log(`Lever: ${allJobs.length} total`)
+    } catch (e) { console.error("Lever error:", e) }
+
     // Remove duplicates
     const seen = new Set()
     const unique = allJobs.filter(j => {
