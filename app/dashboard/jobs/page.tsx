@@ -53,6 +53,7 @@ export default function JobsPage() {
   const [allJobs, setAllJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
   const [fetching, setFetching] = useState(false)
+  const [bulkFetching, setBulkFetching] = useState(false)
   const [scoring, setScoring] = useState(false)
   const [search, setSearch] = useState("")
   const [fetchQuery, setFetchQuery] = useState(lastJobSearch)
@@ -110,10 +111,24 @@ export default function JobsPage() {
       const data = await res.json()
       if (data.success) {
         setMessage(data.message || `Fetched ${data.count} jobs`)
-        await loadJobs(undefined, fetchQuery)
+        await loadJobs(undefined, "")
       } else setMessage(`Error: ${data.error}`)
     } catch (e: any) { setMessage(`Error: ${e.message}`) }
     setFetching(false)
+  }
+
+  async function bulkFetch() {
+    setBulkFetching(true)
+    setMessage("Fetching jobs from 20 categories... this takes 2-3 minutes")
+    try {
+      const res = await fetch("/api/jobs/bulk-fetch")
+      const data = await res.json()
+      if (data.success) {
+        setMessage(`✓ ${data.message}`)
+        await loadJobs(undefined, "")
+      } else setMessage(`Error: ${data.error}`)
+    } catch (e: any) { setMessage(`Error: ${e.message}`) }
+    setBulkFetching(false)
   }
 
   async function scoreJobs() {
@@ -251,6 +266,10 @@ export default function JobsPage() {
           <button onClick={scoreJobs} disabled={scoring || allJobs.length === 0}
             style={{ background: "linear-gradient(135deg, #7c3aed, #a855f7)", color: "white", padding: "10px 20px", borderRadius: "10px", fontSize: "14px", fontWeight: "600", border: "none", cursor: "pointer", opacity: scoring ? 0.7 : 1, whiteSpace: "nowrap" as const }}>
             {scoring ? "Scoring..." : "✨ AI Match"}
+          </button>
+          <button onClick={bulkFetch} disabled={bulkFetching}
+            style={{ background: bulkFetching ? "hsl(224 71% 8%)" : "linear-gradient(135deg, #059669, #10b981)", color: "white", padding: "10px 20px", borderRadius: "10px", fontSize: "14px", fontWeight: "600", border: "none", cursor: bulkFetching ? "not-allowed" : "pointer", opacity: bulkFetching ? 0.7 : 1, whiteSpace: "nowrap" as const }}>
+            {bulkFetching ? "Bulk fetching... (2-3 min)" : "🚀 Bulk Fetch All"}
           </button>
           <button onClick={() => loadJobs()}
             style={{ background: "hsl(224 71% 8%)", color: "hsl(213 31% 91%)", padding: "10px 16px", borderRadius: "10px", fontSize: "14px", border: "1px solid hsl(216 34% 17%)", cursor: "pointer" }}>
