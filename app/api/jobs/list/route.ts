@@ -7,6 +7,7 @@ export async function GET(request: Request) {
     const search = searchParams.get("search") || ""
     const source = searchParams.get("source") || ""
     const userId = searchParams.get("userId") || ""
+    const query = searchParams.get("query") || ""
 
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -15,22 +16,31 @@ export async function GET(request: Request) {
 
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
 
-    let query = supabase
+    let dbQuery = supabase
       .from("jobs")
       .select("*")
       .gte("posted_at", sevenDaysAgo)
       .order("posted_at", { ascending: false })
       .limit(500)
 
-    if (search) query = query.ilike("title", `%${search}%`)
-    if (source) query = query.eq("source", source)
+    // Filter by fetch query (what user searched when clicking Fetch Jobs)
+    if (query) {
+      dbQuery = dbQuery.ilike("title", `%${query}%`)
+    }
 
-    const { data, error } = await query
+    // Filter by title search bar
+    if (search) {
+      dbQuery = dbQuery.ilike("title", `%${search}%`)
+    }
+
+    if (source) dbQuery = dbQuery.eq("source", source)
+
+    const { data, error } = await dbQuery
     if (error) throw error
 
     let jobs = data || []
 
-    // Hide jobs user has already applied to
+    // Hide jobs user already applied to
     if (userId) {
       const { data: applied } = await supabase
         .from("applications")

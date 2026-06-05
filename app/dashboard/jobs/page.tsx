@@ -82,10 +82,14 @@ export default function JobsPage() {
     }
   }
 
-  async function loadJobs(uid?: string) {
+  async function loadJobs(uid?: string, q?: string) {
     setLoading(true)
     const id = uid !== undefined ? uid : userId
-    const res = await fetch(`/api/jobs/list${id ? `?userId=${id}` : ""}`)
+    const currentQuery = q !== undefined ? q : fetchQuery
+    const params = new URLSearchParams()
+    if (id) params.set("userId", id)
+    if (currentQuery) params.set("query", currentQuery)
+    const res = await fetch(`/api/jobs/list?${params.toString()}`)
     const data = await res.json()
     if (data.error) { setMessage(`Error: ${data.error}`); setLoading(false); return }
     setAllJobs(data.jobs || [])
