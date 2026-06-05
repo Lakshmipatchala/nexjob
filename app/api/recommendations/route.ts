@@ -3,70 +3,102 @@ import { createClient } from "@supabase/supabase-js"
 import Anthropic from "@anthropic-ai/sdk"
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SECRET_KEY!
+)
 
-export async function GET(request: Request) {
+export async function POST(request: Request) {
   try {
-    const authHeader = request.headers.get("Authorization")
-    if (!authHeader) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    const token = authHeader.replace("Bearer ", "")
-    const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SECRET_KEY!)
-    const { data: { user } } = await supabase.auth.getUser(token)
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    const { userId, profile } = await request.json()
+    if (!profile) return NextResponse.json({ error: "No profile provided" }, { status: 400 })
 
-    // Get user profile
-    const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).single()
-    if (!profile?.skills && !profile?.current_title) {
-      return NextResponse.json({ error: "Please complete your profile first to get recommendations" })
-    }
-
-    // Get recent active jobs
-    const { data: jobs } = await supabase
+    // Get jobs from last 7 days
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+    const { data: jobs, error } = await supabase
       .from("jobs")
-      .select("id, title, company, location, work_mode, source_url, description")
-      .eq("is_active", true)
+      .select("*")
+      .gte("posted_at", sevenDaysAgo)
       .order("posted_at", { ascending: false })
-      .limit(50)
+      .limit(200)
 
-    if (!jobs?.length) return NextResponse.json({ recommendations: [] })
+    if (error) throw error
+    if (!jobs?.length) return NextResponse.json({ jobs: [] })
 
-    const message = await anthropic.messages.create({
+    // Get applied job IDs to exclude
+    const { data: applied } = await supabase
+      .from("applications")
+      .select("job_id")
+      .eq("user_id", userId)
+    const appliedIds = new Set((applied || []).map((a: any) => a.job_id))
+
+    const availableJobs = jobs.filter(j => !appliedIds.has(j.id))
+
+    // Build profile summary for AI
+    const profileSummary = `
+Name: ${profile.first_name} ${profile.last_name}
+Desired Title: ${profile.desired_title || "Not specified"}
+Years Experience: ${profile.years_experience || "Not specified"}
+Desired Location: ${profile.desired_location || "Any"}
+Target Salary: ${profile.target_salary || "Not specified"}
+Work Authorization: ${profile.work_authorization || "Not specified"}
+Resume Summary: ${profile.resume_summary || "Not provided"}
+    `.trim()
+
+    // Use Claude to score and rank jobs
+    const jobList = availableJobs.slice(0, 100).map((j, i) =>
+      `${i}|${j.id}|${j.title}|${j.company}|${j.location}|${j.work_mode}|${j.salary_min || 0}`
+    ).join("\n")
+
+    const msg = await anthropic.messages.create({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 1024,
+      max_tokens: 2000,
       messages: [{
         role: "user",
-        content: `Based on this user profile, recommend the TOP 6 most relevant jobs from the list below.
+        content: `You are a job matching AI. Score these jobs for this candidate and return top 20 matches.
 
-User Profile:
-- Current title: ${profile.current_title || "Not specified"}
-- Skills: ${profile.skills || "Not specified"}
-- Experience: ${profile.experience_years || "Not specified"} years
-- Desired role: ${profile.desired_role || "Not specified"}
-- Preferred work mode: ${profile.preferred_work_mode || "Any"}
+CANDIDATE PROFILE:
+${profileSummary}
 
-Available Jobs (id | title | company | work_mode):
-${jobs.map(j => `${j.id} | ${j.title} | ${j.company} | ${j.work_mode}`).join("\n")}
+JOBS (format: index|id|title|company|location|work_mode|salary_min):
+${jobList}
 
-Return ONLY a JSON array of 6 job IDs in order of best match, with a brief reason:
+Return ONLY a JSON array of top 20 matches, ordered by match score descending:
 [
-  {"id": "job-uuid-here", "reason": "Matches your React skills and senior level"},
-  ...
-]`
+  {
+    "index": 0,
+    "score": 92,
+    "reasons": ["matches desired title", "senior level role", "remote work"]
+  }
+]
+
+Score based on: title match, experience level, location/remote preference, salary match, work mode.
+Return ONLY the JSON array, no other text.`
       }]
     })
 
-    const content = message.content[0]
-    if (content.type !== "text") throw new Error("Invalid response")
-    const clean = content.text.replace(/```json|```/g, "").trim()
-    const recommendations = JSON.parse(clean)
+    const content = msg.content[0]
+    if (content.type !== "text") throw new Error("Invalid AI response")
 
-    // Get full job details for recommended jobs
-    const recIds = recommendations.map((r: any) => r.id)
-    const recJobs = jobs.filter(j => recIds.includes(j.id)).map(j => ({
-      ...j,
-      reason: recommendations.find((r: any) => r.id === j.id)?.reason
-    }))
+    let matches: any[] = []
+    try {
+      const text = content.text.replace(/```json|```/g, "").trim()
+      matches = JSON.parse(text)
+    } catch (e) {
+      return NextResponse.json({ jobs: [] })
+    }
 
-    return NextResponse.json({ recommendations: recJobs })
+    // Build final job list with scores
+    const recommendedJobs = matches
+      .filter(m => m.index < availableJobs.length)
+      .map(m => ({
+        ...availableJobs[m.index],
+        match_score: m.score,
+        match_reasons: m.reasons || []
+      }))
+      .sort((a, b) => (b.match_score || 0) - (a.match_score || 0))
+
+    return NextResponse.json({ jobs: recommendedJobs })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
