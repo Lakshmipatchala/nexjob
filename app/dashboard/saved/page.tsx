@@ -20,29 +20,23 @@ export default function SavedPage() {
     else setLoading(false)
   }
 
-  async function loadSaved(uid?: string) {
+  async function loadSaved(uid: string) {
     setLoading(true)
-    const id = uid || userId
-    if (!id) { setLoading(false); return }
-    const supabase = createClient()
-    const { data, error } = await supabase
-      .from("saved_jobs")
-      .select("*")
-      .eq("user_id", id)
-      .order("saved_at", { ascending: false })
-    if (error) console.error("loadSaved error:", error.message)
-    setSaved(data || [])
+    try {
+      const res = await fetch(`/api/saved/list?userId=${uid}`)
+      const data = await res.json()
+      setSaved(data.saved || [])
+    } catch (e) { console.error(e) }
     setLoading(false)
   }
 
   async function unsave(rowId: string, jobId: string) {
-    const res = await fetch("/api/saved", {
+    await fetch("/api/saved", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId, jobId })
     })
-    const data = await res.json()
-    if (!data.error) setSaved(prev => prev.filter(s => s.id !== rowId))
+    setSaved(prev => prev.filter(s => s.id !== rowId))
   }
 
   function sendToResume(job: any) {
@@ -59,7 +53,6 @@ export default function SavedPage() {
     <div style={{ minHeight: "100vh", background: "hsl(224 71% 4%)", padding: "32px" }}>
       <h1 style={{ fontSize: "28px", fontWeight: "700", color: "hsl(213 31% 91%)", marginBottom: "6px" }}>Saved Jobs</h1>
       <p style={{ color: "hsl(215 20% 65%)", fontSize: "13px", marginBottom: "28px" }}>{saved.length} saved positions</p>
-
       {loading ? (
         <div style={{ textAlign: "center", padding: "48px", color: "hsl(215 20% 45%)" }}>Loading...</div>
       ) : saved.length === 0 ? (
@@ -86,8 +79,8 @@ export default function SavedPage() {
                 </div>
                 <div style={{ marginBottom: "12px" }}>
                   {job.work_mode && <span style={badge(job.work_mode, "#a78bfa", "rgba(124,110,245,0.15)")}>{job.work_mode}</span>}
-                  {job.job_type && <span style={badge(job.job_type, "#60a5fa", "rgba(96,165,250,0.1)")}>{job.job_type?.replace("_", " ")}</span>}
-                  {job.salary_min && <span style={badge(`$${Math.round(job.salary_min / 1000)}k+`, "#fbbf24", "rgba(251,191,36,0.1)")}>${Math.round(job.salary_min / 1000)}k+</span>}
+                  {job.job_type && <span style={badge(job.job_type, "#60a5fa", "rgba(96,165,250,0.1)")}>{job.job_type?.replace("_"," ")}</span>}
+                  {job.salary_min && <span style={badge(`$${Math.round(job.salary_min/1000)}k+`, "#fbbf24", "rgba(251,191,36,0.1)")}>${Math.round(job.salary_min/1000)}k+</span>}
                 </div>
                 <div style={{ fontSize: "11px", color: "hsl(215 20% 45%)", marginBottom: "14px" }}>
                   Saved {new Date(row.saved_at).toLocaleDateString()}
