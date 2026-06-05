@@ -53,6 +53,8 @@ export default function Navbar() {
         {navLink("/dashboard", "Home")}
         {navLink("/dashboard/jobs", "Jobs")}
         {navLink("/dashboard/resume", "AI Resume")}
+        {navLink("/dashboard/recommendations", "🎯 For You")}
+        {navLink("/dashboard/recommendations", "🎯 For You")}
         {navLink("/dashboard/cover-letter", "Cover Letter")}
         {navLink("/dashboard/applications", "Applications")}
         {navLink("/dashboard/saved", "Saved")}

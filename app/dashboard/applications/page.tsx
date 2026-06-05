@@ -5,11 +5,11 @@ import { createClient } from "@/lib/supabase"
 type Status = "applied" | "screening" | "interview" | "offer" | "rejected"
 const STATUSES: Status[] = ["applied", "screening", "interview", "offer", "rejected"]
 const STATUS_CONFIG: Record<Status, { color: string; bg: string; label: string; emoji: string }> = {
-  applied:   { color: "#60a5fa", bg: "rgba(96,165,250,0.1)",   label: "Applied",   emoji: "📤" },
-  screening: { color: "#fbbf24", bg: "rgba(251,191,36,0.1)",   label: "Screening", emoji: "🔍" },
-  interview: { color: "#a78bfa", bg: "rgba(167,139,250,0.1)",  label: "Interview", emoji: "🎯" },
-  offer:     { color: "#4ade80", bg: "rgba(74,222,128,0.1)",   label: "Offer",     emoji: "🎉" },
-  rejected:  { color: "#f87171", bg: "rgba(248,113,113,0.1)",  label: "Rejected",  emoji: "❌" },
+  applied:   { color: "#60a5fa", bg: "rgba(96,165,250,0.1)",  label: "Applied",   emoji: "📤" },
+  screening: { color: "#fbbf24", bg: "rgba(251,191,36,0.1)",  label: "Screening", emoji: "🔍" },
+  interview: { color: "#a78bfa", bg: "rgba(167,139,250,0.1)", label: "Interview", emoji: "🎯" },
+  offer:     { color: "#4ade80", bg: "rgba(74,222,128,0.1)",  label: "Offer",     emoji: "🎉" },
+  rejected:  { color: "#f87171", bg: "rgba(248,113,113,0.1)", label: "Rejected",  emoji: "❌" },
 }
 
 export default function ApplicationsPage() {
@@ -18,36 +18,58 @@ export default function ApplicationsPage() {
   const [filter, setFilter] = useState<Status | "all">("all")
   const [noteEditing, setNoteEditing] = useState<string | null>(null)
   const [noteText, setNoteText] = useState("")
+  const [userId, setUserId] = useState("")
 
-  useEffect(() => { loadApps() }, [])
+  useEffect(() => { initUser() }, [])
 
-  async function loadApps() {
-    setLoading(true)
+  async function initUser() {
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setLoading(false); return }
-    const { data } = await supabase.from("applications").select("*").eq("user_id", user.id).order("applied_at", { ascending: false })
-    setApps(data || [])
+    if (user) {
+      setUserId(user.id)
+      loadApps(user.id)
+    } else setLoading(false)
+  }
+
+  async function loadApps(uid?: string) {
+    setLoading(true)
+    const id = uid || userId
+    if (!id) { setLoading(false); return }
+    try {
+      const res = await fetch(`/api/applications?userId=${id}`)
+      const data = await res.json()
+      if (data.error) console.error("loadApps error:", data.error)
+      setApps(data.applications || [])
+    } catch (e) { console.error(e) }
     setLoading(false)
   }
 
   async function updateStatus(id: string, status: Status) {
-    const supabase = createClient()
-    await supabase.from("applications").update({ status }).eq("id", id)
+    await fetch("/api/applications", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, status })
+    })
     setApps(prev => prev.map(a => a.id === id ? { ...a, status } : a))
   }
 
   async function saveNote(id: string) {
-    const supabase = createClient()
-    await supabase.from("applications").update({ notes: noteText }).eq("id", id)
+    await fetch("/api/applications", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, notes: noteText })
+    })
     setApps(prev => prev.map(a => a.id === id ? { ...a, notes: noteText } : a))
     setNoteEditing(null)
   }
 
   async function deleteApp(id: string) {
     if (!confirm("Remove this application?")) return
-    const supabase = createClient()
-    await supabase.from("applications").delete().eq("id", id)
+    await fetch("/api/applications", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id })
+    })
     setApps(prev => prev.filter(a => a.id !== id))
   }
 
@@ -63,7 +85,8 @@ export default function ApplicationsPage() {
         {STATUSES.map(s => {
           const cfg = STATUS_CONFIG[s]
           return (
-            <div key={s} style={{ background: "hsl(224 71% 6%)", border: `1px solid ${cfg.bg}`, borderRadius: "10px", padding: "16px", textAlign: "center" as const }}>
+            <div key={s} onClick={() => setFilter(s)}
+              style={{ background: "hsl(224 71% 6%)", border: `1px solid ${filter === s ? cfg.color : "hsl(216 34% 17%)"}`, borderRadius: "10px", padding: "16px", textAlign: "center" as const, cursor: "pointer" }}>
               <div style={{ fontSize: "24px", marginBottom: "4px" }}>{cfg.emoji}</div>
               <div style={{ fontSize: "22px", fontWeight: "700", color: cfg.color }}>{counts[s] || 0}</div>
               <div style={{ fontSize: "12px", color: "hsl(215 20% 55%)" }}>{cfg.label}</div>
@@ -73,10 +96,14 @@ export default function ApplicationsPage() {
       </div>
 
       <div style={{ display: "flex", gap: "8px", marginBottom: "20px", flexWrap: "wrap" as const }}>
-        {(["all", ...STATUSES] as const).map(s => (
+        <button onClick={() => setFilter("all")}
+          style={{ padding: "6px 14px", borderRadius: "20px", fontSize: "12px", fontWeight: "600" as const, cursor: "pointer", border: filter === "all" ? "none" : "1px solid hsl(216 34% 25%)", background: filter === "all" ? "#7c3aed" : "transparent", color: filter === "all" ? "white" : "hsl(215 20% 65%)" }}>
+          All ({apps.length})
+        </button>
+        {STATUSES.map(s => (
           <button key={s} onClick={() => setFilter(s)}
-            style={{ padding: "6px 14px", borderRadius: "20px", fontSize: "12px", fontWeight: "600" as const, cursor: "pointer", border: filter === s ? "none" : "1px solid hsl(216 34% 25%)", background: filter === s ? "#7c3aed" : "transparent", color: filter === s ? "white" : "hsl(215 20% 65%)" }}>
-            {s === "all" ? `All (${apps.length})` : `${STATUS_CONFIG[s].emoji} ${STATUS_CONFIG[s].label} (${counts[s] || 0})`}
+            style={{ padding: "6px 14px", borderRadius: "20px", fontSize: "12px", fontWeight: "600" as const, cursor: "pointer", border: filter === s ? "none" : "1px solid hsl(216 34% 25%)", background: filter === s ? STATUS_CONFIG[s].bg : "transparent", color: filter === s ? STATUS_CONFIG[s].color : "hsl(215 20% 65%)" }}>
+            {STATUS_CONFIG[s].emoji} {STATUS_CONFIG[s].label} ({counts[s] || 0})
           </button>
         ))}
       </div>
@@ -87,13 +114,12 @@ export default function ApplicationsPage() {
         <div style={{ textAlign: "center", padding: "64px", color: "hsl(215 20% 45%)" }}>
           <div style={{ fontSize: "48px", marginBottom: "16px" }}>📋</div>
           <p style={{ fontSize: "16px", marginBottom: "8px" }}>No applications yet</p>
-          <p style={{ fontSize: "13px" }}>Click Apply on any job card to track it here automatically</p>
+          <p style={{ fontSize: "13px" }}>Click Apply → on any job card to track it here automatically</p>
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column" as const, gap: "12px" }}>
           {filtered.map(app => {
             const job = app.job_data || {}
-            const cfg = STATUS_CONFIG[app.status as Status] || STATUS_CONFIG.applied
             return (
               <div key={app.id} style={{ background: "hsl(224 71% 6%)", border: "1px solid hsl(216 34% 17%)", borderRadius: "12px", padding: "20px" }}>
                 <div style={{ display: "flex", alignItems: "flex-start", gap: "16px", flexWrap: "wrap" as const }}>
@@ -131,7 +157,7 @@ export default function ApplicationsPage() {
                   {noteEditing === app.id ? (
                     <div style={{ display: "flex", gap: "8px" }}>
                       <input value={noteText} onChange={e => setNoteText(e.target.value)}
-                        placeholder="Add notes..."
+                        placeholder="Add notes about this application..."
                         style={{ flex: 1, background: "hsl(224 71% 8%)", border: "1px solid hsl(216 34% 17%)", borderRadius: "8px", padding: "8px 12px", color: "hsl(213 31% 91%)", fontSize: "13px", outline: "none" }} />
                       <button onClick={() => saveNote(app.id)} style={{ background: "#7c3aed", color: "white", padding: "8px 14px", borderRadius: "8px", fontSize: "13px", border: "none", cursor: "pointer" }}>Save</button>
                       <button onClick={() => setNoteEditing(null)} style={{ background: "transparent", color: "hsl(215 20% 55%)", padding: "8px 10px", borderRadius: "8px", fontSize: "13px", border: "1px solid hsl(216 34% 25%)", cursor: "pointer" }}>Cancel</button>
