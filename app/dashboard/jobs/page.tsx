@@ -1,5 +1,5 @@
 ﻿"use client"
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { createClient } from "@/lib/supabase"
 import { useUIStore } from "@/store/ui.store"
 import { useRouter } from "next/navigation"
@@ -57,6 +57,7 @@ export default function JobsPage() {
   const [fetchQuery, setFetchQuery] = useState(lastJobSearch)
   const [message, setMessage] = useState("")
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set())
+  const [savingId, setSavingId] = useState<string | null>(null)
   const [workModeFilter, setWorkModeFilter] = useState("all")
   const [typeFilter, setTypeFilter] = useState("all")
   const [sortBy, setSortBy] = useState("newest")
@@ -78,7 +79,11 @@ export default function JobsPage() {
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
-    const { data } = await supabase.from("saved_jobs").select("job_id").eq("user_id", user.id)
+    const { data, error } = await supabase
+      .from("saved_jobs")
+      .select("job_id")
+      .eq("user_id", user.id)
+    if (error) { console.error("loadSaved error:", error.message); return }
     if (data) setSavedIds(new Set(data.map((r: any) => r.job_id)))
   }
 
@@ -112,16 +117,32 @@ export default function JobsPage() {
   }
 
   async function toggleSave(job: Job) {
+    setSavingId(job.id)
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    if (!user) { setSavingId(null); return }
+
     if (savedIds.has(job.id)) {
-      await supabase.from("saved_jobs").delete().eq("user_id", user.id).eq("job_id", job.id)
+      const { error } = await supabase
+        .from("saved_jobs")
+        .delete()
+        .eq("user_id", user.id)
+        .eq("job_id", job.id)
+      if (error) { console.error("unsave error:", error.message); setSavingId(null); return }
       setSavedIds(prev => { const n = new Set(prev); n.delete(job.id); return n })
     } else {
-      await supabase.from("saved_jobs").insert({ user_id: user.id, job_id: job.id, job_data: job })
+      const { error } = await supabase
+        .from("saved_jobs")
+        .insert({
+          user_id: user.id,
+          job_id: job.id,
+          job_data: job,
+          saved_at: new Date().toISOString()
+        })
+      if (error) { console.error("save error:", error.message); setSavingId(null); return }
       setSavedIds(prev => new Set([...prev, job.id]))
     }
+    setSavingId(null)
   }
 
   function sendToResume(job: Job) {
@@ -135,7 +156,8 @@ export default function JobsPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
     await supabase.from("applications").upsert({
-      user_id: user.id, job_id: job.id, job_data: job, status: "applied", applied_at: new Date().toISOString()
+      user_id: user.id, job_id: job.id, job_data: job,
+      status: "applied", applied_at: new Date().toISOString()
     }, { onConflict: "user_id,job_id" })
   }
 
@@ -181,6 +203,7 @@ export default function JobsPage() {
           <p style={{ color: "hsl(215 20% 65%)", fontSize: "13px", margin: "0" }}>
             {filteredJobs.length} jobs found
             {filteredJobs.length !== allJobs.length && <span style={{ color: "hsl(215 20% 45%)" }}> (filtered from {allJobs.length})</span>}
+            {savedIds.size > 0 && <span style={{ marginLeft: "10px", color: "#a78bfa" }}>· {savedIds.size} saved</span>}
           </p>
         </div>
         <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" as const }}>
@@ -257,6 +280,7 @@ export default function JobsPage() {
             {paginatedJobs.map(job => {
               const mc = matchColor(job.ai_match_score)
               const saved = savedIds.has(job.id)
+              const isSaving = savingId === job.id
               return (
                 <div key={job.id} style={{ background: "hsl(224 71% 6%)", border: `1px solid ${isFresh(job.posted_at) ? "rgba(34,197,94,0.3)" : "hsl(216 34% 17%)"}`, borderRadius: "12px", padding: "20px", position: "relative" as const }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px" }}>
@@ -270,9 +294,19 @@ export default function JobsPage() {
                         </span>
                       )}
                     </div>
-                    <button onClick={() => toggleSave(job)} title={saved ? "Remove" : "Save"}
-                      style={{ background: saved ? "rgba(124,58,237,0.2)" : "transparent", border: saved ? "1px solid rgba(124,58,237,0.4)" : "1px solid hsl(216 34% 25%)", borderRadius: "8px", padding: "4px 8px", cursor: "pointer", fontSize: "14px" }}>
-                      {saved ? "🔖" : "🔗"}
+                    {/* Save button - clear bookmark icon */}
+                    <button
+                      onClick={() => toggleSave(job)}
+                      disabled={isSaving}
+                      title={saved ? "Remove from saved" : "Save job"}
+                      style={{
+                        background: saved ? "rgba(124,58,237,0.2)" : "transparent",
+                        border: saved ? "1px solid rgba(124,58,237,0.4)" : "1px solid hsl(216 34% 25%)",
+                        borderRadius: "8px", padding: "5px 10px", cursor: isSaving ? "wait" : "pointer",
+                        fontSize: "13px", color: saved ? "#a78bfa" : "hsl(215 20% 55%)",
+                        fontWeight: "600" as const, opacity: isSaving ? 0.5 : 1
+                      }}>
+                      {isSaving ? "..." : saved ? "★ Saved" : "☆ Save"}
                     </button>
                   </div>
 
