@@ -1,18 +1,22 @@
 ﻿import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { Resend } from "resend"
-
-const resend = new Resend(process.env.RESEND_API_KEY)
 
 export async function POST(request: Request) {
   try {
+    const resendKey = process.env.RESEND_API_KEY
+    if (!resendKey) {
+      return NextResponse.json({ error: "Email service not configured yet" }, { status: 503 })
+    }
+
+    const { Resend } = await import("resend")
+    const resend = new Resend(resendKey)
+
     const { email, query } = await request.json()
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SECRET_KEY!
     )
 
-    // Get matching jobs from last 24 hours
     const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
     const { data: jobs } = await supabase
       .from("jobs")
@@ -30,16 +34,12 @@ export async function POST(request: Request) {
       <div style="border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin-bottom:12px;">
         <h3 style="margin:0 0 4px;color:#1f2937;font-size:16px;">${job.title}</h3>
         <p style="margin:0 0 8px;color:#6b7280;font-size:14px;">${job.company} · ${job.location}</p>
-        <div style="margin-bottom:10px;">
-          <span style="background:#f3f4f6;padding:3px 8px;border-radius:4px;font-size:12px;margin-right:6px;">${job.work_mode}</span>
-          <span style="background:#f3f4f6;padding:3px 8px;border-radius:4px;font-size:12px;">${job.source}</span>
-        </div>
         <a href="${job.source_url}" style="background:#7c3aed;color:white;padding:8px 16px;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600;">Apply Now</a>
       </div>
     `).join("")
 
     await resend.emails.send({
-      from: "NexJob Alerts <alerts@nexjob-sigma.vercel.app>",
+      from: "NexJob Alerts <onboarding@resend.dev>",
       to: email,
       subject: `🔔 ${jobs.length} new "${query}" jobs today`,
       html: `
@@ -57,9 +57,6 @@ export async function POST(request: Request) {
               </a>
             </div>
           </div>
-          <p style="text-align:center;color:#9ca3af;font-size:12px;margin-top:16px;">
-            You are receiving this because you set up a job alert on NexJob.
-          </p>
         </div>
       `
     })

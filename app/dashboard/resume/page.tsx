@@ -1,12 +1,26 @@
 ﻿"use client"
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import mammoth from "mammoth"
+import { useUIStore } from "@/store/ui.store"
 
 export default function ResumePage() {
+  const prefilledJob = useUIStore(s => s.prefilledJob)
+  const clearPrefilledJob = useUIStore(s => s.clearPrefilledJob)
+
   const [resumeText, setResumeText] = useState("")
   const [jobDescription, setJobDescription] = useState("")
   const [jobTitle, setJobTitle] = useState("")
   const [company, setCompany] = useState("")
+
+  // Consume pre-filled job from Jobs page
+  useEffect(() => {
+    if (prefilledJob) {
+      setJobTitle(prefilledJob.jobTitle)
+      setCompany(prefilledJob.company)
+      setJobDescription(prefilledJob.jobDescription)
+      clearPrefilledJob()
+    }
+  }, [])
   const [pages, setPages] = useState("1")
   const [style, setStyle] = useState("professional")
   const [experienceLevel, setExperienceLevel] = useState("senior")
@@ -195,7 +209,14 @@ export default function ResumePage() {
 
   return (
     <div style={{minHeight:"100vh", background:"hsl(224 71% 4%)", padding:"32px"}}>
-      <h1 style={{fontSize:"28px", fontWeight:"700", color:"hsl(213 31% 91%)", marginBottom:"6px"}}>AI Resume Builder</h1>
+      <div style={{display:"flex", alignItems:"center", gap:"12px", flexWrap:"wrap" as const, marginBottom:"6px"}}>
+        <h1 style={{fontSize:"28px", fontWeight:"700", color:"hsl(213 31% 91%)", margin:0}}>AI Resume Builder</h1>
+        {jobTitle && company && (
+          <span style={{fontSize:"13px", fontWeight:"600", background:"rgba(34,197,94,0.15)", color:"#4ade80", padding:"4px 12px", borderRadius:"20px", border:"1px solid rgba(34,197,94,0.3)"}}>
+            ✓ Pre-filled from job
+          </span>
+        )}
+      </div>
       <p style={{fontSize:"14px", color:"hsl(215 20% 65%)", marginBottom:"28px"}}>Upload Word resume · Set specifications · Claude rewrites everything · Download PDF or Word</p>
 
       <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:"24px", marginBottom:"20px"}}>

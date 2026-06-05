@@ -2,126 +2,156 @@
 import { useEffect, useState } from "react"
 import { createClient } from "@/lib/supabase"
 
-const STATUSES = [
-  { key:"applied", label:"Applied", color:"#60a5fa", bg:"rgba(96,165,250,0.1)" },
-  { key:"screening", label:"Screening", color:"#fbbf24", bg:"rgba(251,191,36,0.1)" },
-  { key:"interview", label:"Interview", color:"#a78bfa", bg:"rgba(167,139,250,0.1)" },
-  { key:"offer", label:"Offer", color:"#4ade80", bg:"rgba(74,222,128,0.1)" },
-  { key:"rejected", label:"Rejected", color:"#f87171", bg:"rgba(248,113,113,0.1)" },
-  { key:"withdrawn", label:"Withdrawn", color:"hsl(215 20% 45%)", bg:"rgba(255,255,255,0.05)" },
-]
+type Status = "applied" | "screening" | "interview" | "offer" | "rejected"
+const STATUSES: Status[] = ["applied", "screening", "interview", "offer", "rejected"]
+const STATUS_CONFIG: Record<Status, { color: string; bg: string; label: string; emoji: string }> = {
+  applied:   { color: "#60a5fa", bg: "rgba(96,165,250,0.1)",   label: "Applied",   emoji: "📤" },
+  screening: { color: "#fbbf24", bg: "rgba(251,191,36,0.1)",   label: "Screening", emoji: "🔍" },
+  interview: { color: "#a78bfa", bg: "rgba(167,139,250,0.1)",  label: "Interview", emoji: "🎯" },
+  offer:     { color: "#4ade80", bg: "rgba(74,222,128,0.1)",   label: "Offer",     emoji: "🎉" },
+  rejected:  { color: "#f87171", bg: "rgba(248,113,113,0.1)",  label: "Rejected",  emoji: "❌" },
+}
 
 export default function ApplicationsPage() {
-  const [applications, setApplications] = useState<any[]>([])
+  const [apps, setApps] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState("all")
-  const [token, setToken] = useState("")
+  const [filter, setFilter] = useState<Status | "all">("all")
+  const [noteEditing, setNoteEditing] = useState<string | null>(null)
+  const [noteText, setNoteText] = useState("")
 
-  useEffect(() => {
-    const supabase = createClient()
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) {
-        setToken(data.session.access_token)
-        loadApplications(data.session.access_token)
-      }
-    })
-  }, [])
+  useEffect(() => { loadApps() }, [])
 
-  async function loadApplications(t: string) {
+  async function loadApps() {
     setLoading(true)
-    const res = await fetch("/api/applications", {
-      headers: { "Authorization": `Bearer ${t}` }
-    })
-    const data = await res.json()
-    setApplications(data.applications || [])
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setLoading(false); return }
+    const { data } = await supabase.from("applications").select("*").eq("user_id", user.id).order("applied_at", { ascending: false })
+    setApps(data || [])
     setLoading(false)
   }
 
-  async function updateStatus(id: string, status: string) {
-    await fetch("/api/applications", {
-      method: "PATCH",
-      headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ id, status })
-    })
-    loadApplications(token)
+  async function updateStatus(id: string, status: Status) {
+    const supabase = createClient()
+    await supabase.from("applications").update({ status }).eq("id", id)
+    setApps(prev => prev.map(a => a.id === id ? { ...a, status } : a))
   }
 
-  const filtered = filter === "all" ? applications : applications.filter(a => a.status === filter)
-  const stats = STATUSES.map(s => ({ ...s, count: applications.filter(a => a.status === s.key).length }))
-  const card = { background:"hsl(224 71% 6%)", border:"1px solid hsl(216 34% 17%)", borderRadius:"12px", padding:"20px", marginBottom:"12px" }
+  async function saveNote(id: string) {
+    const supabase = createClient()
+    await supabase.from("applications").update({ notes: noteText }).eq("id", id)
+    setApps(prev => prev.map(a => a.id === id ? { ...a, notes: noteText } : a))
+    setNoteEditing(null)
+  }
+
+  async function deleteApp(id: string) {
+    if (!confirm("Remove this application?")) return
+    const supabase = createClient()
+    await supabase.from("applications").delete().eq("id", id)
+    setApps(prev => prev.filter(a => a.id !== id))
+  }
+
+  const filtered = filter === "all" ? apps : apps.filter(a => a.status === filter)
+  const counts = STATUSES.reduce((acc, s) => ({ ...acc, [s]: apps.filter(a => a.status === s).length }), {} as Record<Status, number>)
 
   return (
-    <div style={{minHeight:"100vh", background:"hsl(224 71% 4%)", padding:"24px 32px"}}>
-      <h1 style={{fontSize:"28px", fontWeight:"700", color:"hsl(213 31% 91%)", marginBottom:"6px"}}>Application Tracker</h1>
-      <p style={{fontSize:"14px", color:"hsl(215 20% 65%)", marginBottom:"24px"}}>{applications.length} total applications</p>
+    <div style={{ minHeight: "100vh", background: "hsl(224 71% 4%)", padding: "32px" }}>
+      <h1 style={{ fontSize: "28px", fontWeight: "700", color: "hsl(213 31% 91%)", marginBottom: "6px" }}>Applications Tracker</h1>
+      <p style={{ color: "hsl(215 20% 65%)", fontSize: "13px", marginBottom: "24px" }}>{apps.length} total applications tracked</p>
 
-      {/* Stats */}
-      <div style={{display:"grid", gridTemplateColumns:"repeat(6, 1fr)", gap:"12px", marginBottom:"24px"}}>
-        {stats.map(s => (
-          <div key={s.key} style={{background:"hsl(224 71% 6%)", border:`1px solid ${s.count>0?s.color:"hsl(216 34% 17%)"}`, borderRadius:"10px", padding:"14px", textAlign:"center" as const, cursor:"pointer"}}
-            onClick={()=>setFilter(s.key)}>
-            <div style={{fontSize:"24px", fontWeight:"700", color:s.color}}>{s.count}</div>
-            <div style={{fontSize:"12px", color:"hsl(215 20% 65%)", marginTop:"4px"}}>{s.label}</div>
-          </div>
-        ))}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "12px", marginBottom: "24px" }}>
+        {STATUSES.map(s => {
+          const cfg = STATUS_CONFIG[s]
+          return (
+            <div key={s} style={{ background: "hsl(224 71% 6%)", border: `1px solid ${cfg.bg}`, borderRadius: "10px", padding: "16px", textAlign: "center" as const }}>
+              <div style={{ fontSize: "24px", marginBottom: "4px" }}>{cfg.emoji}</div>
+              <div style={{ fontSize: "22px", fontWeight: "700", color: cfg.color }}>{counts[s] || 0}</div>
+              <div style={{ fontSize: "12px", color: "hsl(215 20% 55%)" }}>{cfg.label}</div>
+            </div>
+          )
+        })}
       </div>
 
-      {/* Filter */}
-      <div style={{display:"flex", gap:"8px", marginBottom:"20px", flexWrap:"wrap" as const}}>
-        {["all", ...STATUSES.map(s=>s.key)].map(f => (
-          <button key={f} onClick={()=>setFilter(f)}
-            style={{padding:"6px 16px", borderRadius:"20px", fontSize:"13px", fontWeight:"500", border:"none", cursor:"pointer",
-              background:filter===f?"#7c3aed":"hsl(224 71% 8%)",
-              color:filter===f?"white":"hsl(215 20% 65%)"}}>
-            {f==="all"?"All":STATUSES.find(s=>s.key===f)?.label}
+      <div style={{ display: "flex", gap: "8px", marginBottom: "20px", flexWrap: "wrap" as const }}>
+        {(["all", ...STATUSES] as const).map(s => (
+          <button key={s} onClick={() => setFilter(s)}
+            style={{ padding: "6px 14px", borderRadius: "20px", fontSize: "12px", fontWeight: "600" as const, cursor: "pointer", border: filter === s ? "none" : "1px solid hsl(216 34% 25%)", background: filter === s ? "#7c3aed" : "transparent", color: filter === s ? "white" : "hsl(215 20% 65%)" }}>
+            {s === "all" ? `All (${apps.length})` : `${STATUS_CONFIG[s].emoji} ${STATUS_CONFIG[s].label} (${counts[s] || 0})`}
           </button>
         ))}
       </div>
 
       {loading ? (
-        <div style={{textAlign:"center", padding:"48px", color:"hsl(215 20% 45%)"}}>Loading...</div>
+        <div style={{ textAlign: "center", padding: "48px", color: "hsl(215 20% 45%)" }}>Loading...</div>
       ) : filtered.length === 0 ? (
-        <div style={{textAlign:"center", padding:"48px", color:"hsl(215 20% 45%)"}}>
-          <div style={{fontSize:"48px", marginBottom:"16px"}}>📋</div>
-          <p style={{fontSize:"16px", marginBottom:"8px"}}>No applications yet</p>
-          <p style={{fontSize:"13px"}}>Click "Track Application" on any job to add it here</p>
+        <div style={{ textAlign: "center", padding: "64px", color: "hsl(215 20% 45%)" }}>
+          <div style={{ fontSize: "48px", marginBottom: "16px" }}>📋</div>
+          <p style={{ fontSize: "16px", marginBottom: "8px" }}>No applications yet</p>
+          <p style={{ fontSize: "13px" }}>Click Apply on any job card to track it here automatically</p>
         </div>
       ) : (
-        filtered.map(app => {
-          const status = STATUSES.find(s => s.key === app.status) || STATUSES[0]
-          return (
-            <div key={app.id} style={card}>
-              <div style={{display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:"12px", flexWrap:"wrap" as const}}>
-                <div style={{flex:1}}>
-                  <div style={{fontSize:"16px", fontWeight:"600", color:"hsl(213 31% 91%)", marginBottom:"4px"}}>
-                    {app.jobs?.title || "Unknown Job"}
+        <div style={{ display: "flex", flexDirection: "column" as const, gap: "12px" }}>
+          {filtered.map(app => {
+            const job = app.job_data || {}
+            const cfg = STATUS_CONFIG[app.status as Status] || STATUS_CONFIG.applied
+            return (
+              <div key={app.id} style={{ background: "hsl(224 71% 6%)", border: "1px solid hsl(216 34% 17%)", borderRadius: "12px", padding: "20px" }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: "16px", flexWrap: "wrap" as const }}>
+                  <div style={{ flex: 1, minWidth: "200px" }}>
+                    <div style={{ fontSize: "15px", fontWeight: "600", color: "hsl(213 31% 91%)", marginBottom: "3px" }}>{job.title || "Unknown Role"}</div>
+                    <div style={{ fontSize: "13px", color: "hsl(215 20% 65%)", marginBottom: "6px" }}>{job.company || "Unknown Company"} · {job.location || ""}</div>
+                    <div style={{ fontSize: "11px", color: "hsl(215 20% 45%)" }}>Applied {new Date(app.applied_at).toLocaleDateString()}</div>
                   </div>
-                  <div style={{fontSize:"13px", color:"hsl(215 20% 65%)", marginBottom:"8px"}}>
-                    {app.jobs?.company} · {app.jobs?.location}
+                  <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" as const }}>
+                    {STATUSES.map(s => {
+                      const c = STATUS_CONFIG[s]
+                      const active = app.status === s
+                      return (
+                        <button key={s} onClick={() => updateStatus(app.id, s)}
+                          style={{ padding: "4px 10px", borderRadius: "20px", fontSize: "11px", fontWeight: "600" as const, cursor: "pointer", border: active ? "none" : "1px solid hsl(216 34% 25%)", background: active ? c.bg : "transparent", color: active ? c.color : "hsl(215 20% 45%)" }}>
+                          {c.emoji} {c.label}
+                        </button>
+                      )
+                    })}
                   </div>
-                  <div style={{fontSize:"12px", color:"hsl(215 20% 45%)"}}>
-                    Applied {new Date(app.created_at).toLocaleDateString()}
+                  <div style={{ display: "flex", gap: "6px" }}>
+                    {job.source_url && (
+                      <button onClick={() => window.open(job.source_url, "_blank")}
+                        style={{ background: "#7c3aed", color: "white", padding: "6px 12px", borderRadius: "8px", fontSize: "12px", fontWeight: "600" as const, border: "none", cursor: "pointer" }}>
+                        View Job
+                      </button>
+                    )}
+                    <button onClick={() => deleteApp(app.id)}
+                      style={{ background: "rgba(239,68,68,0.1)", color: "#f87171", padding: "6px 10px", borderRadius: "8px", fontSize: "12px", border: "1px solid rgba(239,68,68,0.2)", cursor: "pointer" }}>
+                      ✕
+                    </button>
                   </div>
                 </div>
-                <div style={{display:"flex", alignItems:"center", gap:"10px"}}>
-                  <span style={{padding:"4px 12px", borderRadius:"20px", fontSize:"12px", fontWeight:"600", background:status.bg, color:status.color}}>
-                    {status.label}
-                  </span>
-                  <select
-                    value={app.status}
-                    onChange={e=>updateStatus(app.id, e.target.value)}
-                    style={{background:"hsl(224 71% 8%)", border:"1px solid hsl(216 34% 17%)", borderRadius:"8px", padding:"6px 10px", color:"hsl(213 31% 91%)", fontSize:"13px", cursor:"pointer", outline:"none"}}>
-                    {STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
-                  </select>
-                  <button onClick={()=>window.open(app.jobs?.source_url,"_blank")}
-                    style={{background:"#7c3aed", color:"white", padding:"6px 14px", borderRadius:"8px", fontSize:"13px", fontWeight:"600", border:"none", cursor:"pointer"}}>
-                    View Job
-                  </button>
+                <div style={{ marginTop: "12px", borderTop: "1px solid hsl(216 34% 13%)", paddingTop: "12px" }}>
+                  {noteEditing === app.id ? (
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      <input value={noteText} onChange={e => setNoteText(e.target.value)}
+                        placeholder="Add notes..."
+                        style={{ flex: 1, background: "hsl(224 71% 8%)", border: "1px solid hsl(216 34% 17%)", borderRadius: "8px", padding: "8px 12px", color: "hsl(213 31% 91%)", fontSize: "13px", outline: "none" }} />
+                      <button onClick={() => saveNote(app.id)} style={{ background: "#7c3aed", color: "white", padding: "8px 14px", borderRadius: "8px", fontSize: "13px", border: "none", cursor: "pointer" }}>Save</button>
+                      <button onClick={() => setNoteEditing(null)} style={{ background: "transparent", color: "hsl(215 20% 55%)", padding: "8px 10px", borderRadius: "8px", fontSize: "13px", border: "1px solid hsl(216 34% 25%)", cursor: "pointer" }}>Cancel</button>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <span style={{ flex: 1, fontSize: "13px", color: app.notes ? "hsl(215 20% 65%)" : "hsl(215 20% 40%)", fontStyle: app.notes ? "normal" : "italic" }}>
+                        {app.notes || "No notes yet..."}
+                      </span>
+                      <button onClick={() => { setNoteEditing(app.id); setNoteText(app.notes || "") }}
+                        style={{ background: "transparent", color: "#a78bfa", border: "none", fontSize: "12px", cursor: "pointer" }}>
+                        ✏️ {app.notes ? "Edit" : "Add note"}
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
-            </div>
-          )
-        })
+            )
+          })}
+        </div>
       )}
     </div>
   )

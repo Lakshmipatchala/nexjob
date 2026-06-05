@@ -2,6 +2,12 @@
 import { persist } from "zustand/middleware"
 import type { AutofillEngine } from "@/types"
 
+interface PrefilledJob {
+  jobTitle: string
+  company: string
+  jobDescription: string
+}
+
 interface UIState {
   sidebarOpen: boolean
   setSidebarOpen: (open: boolean) => void
@@ -9,6 +15,9 @@ interface UIState {
   setAutofillEngine: (engine: AutofillEngine) => void
   selectedSources: string[]
   toggleSource: (source: string) => void
+  prefilledJob: PrefilledJob | null
+  setPrefilledJob: (job: PrefilledJob | null) => void
+  clearPrefilledJob: () => void
 }
 
 const ALL_SOURCES = ["linkedin", "indeed", "glassdoor", "wellfound", "google_jobs"]
@@ -27,7 +36,17 @@ export const useUIStore = create<UIState>()(
             ? s.selectedSources.filter((x) => x !== source)
             : [...s.selectedSources, source],
         })),
+      prefilledJob: null,
+      setPrefilledJob: (job) => set({ prefilledJob: job }),
+      clearPrefilledJob: () => set({ prefilledJob: null }),
     }),
-    { name: "nexjob-ui", partialize: (s) => ({ autofillEngine: s.autofillEngine, selectedSources: s.selectedSources }) }
+    {
+      name: "nexjob-ui",
+      partialize: (s) => ({
+        autofillEngine: s.autofillEngine,
+        selectedSources: s.selectedSources,
+        prefilledJob: s.prefilledJob,
+      }),
+    }
   )
 )
