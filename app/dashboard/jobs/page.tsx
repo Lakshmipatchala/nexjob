@@ -44,24 +44,25 @@ function matchColor(score?: number) {
 const JOBS_PER_PAGE = 20
 
 export default function JobsPage() {
+  const lastJobSearch = useUIStore(s => s.lastJobSearch)
+  const setLastJobSearch = useUIStore(s => s.setLastJobSearch)
+  const setPrefilledJob = useUIStore(s => s.setPrefilledJob)
+  const router = useRouter()
+
   const [allJobs, setAllJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
   const [fetching, setFetching] = useState(false)
   const [scoring, setScoring] = useState(false)
   const [search, setSearch] = useState("")
-  const [fetchQuery, setFetchQuery] = useState("software engineer")
+  const [fetchQuery, setFetchQuery] = useState(lastJobSearch)
   const [message, setMessage] = useState("")
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set())
   const [workModeFilter, setWorkModeFilter] = useState("all")
   const [typeFilter, setTypeFilter] = useState("all")
   const [sortBy, setSortBy] = useState("newest")
   const [currentPage, setCurrentPage] = useState(1)
-  const setPrefilledJob = useUIStore(s => s.setPrefilledJob)
-  const router = useRouter()
 
   useEffect(() => { loadJobs(); loadSaved() }, [])
-
-  // Reset to page 1 when filters change
   useEffect(() => { setCurrentPage(1) }, [search, workModeFilter, typeFilter, sortBy])
 
   async function loadJobs() {
@@ -83,6 +84,7 @@ export default function JobsPage() {
 
   async function fetchFreshJobs() {
     setFetching(true)
+    setLastJobSearch(fetchQuery)
     setMessage(`Fetching "${fetchQuery}" jobs...`)
     const res = await fetch(`/api/jobs/fetch?query=${encodeURIComponent(fetchQuery)}`)
     const data = await res.json()
@@ -137,7 +139,6 @@ export default function JobsPage() {
     }, { onConflict: "user_id,job_id" })
   }
 
-  // Filter jobs
   const filteredJobs = allJobs.filter(j => {
     if (workModeFilter !== "all" && j.work_mode !== workModeFilter) return false
     if (typeFilter !== "all" && j.job_type !== typeFilter) return false
@@ -151,7 +152,6 @@ export default function JobsPage() {
     return 0
   })
 
-  // Pagination
   const totalPages = Math.ceil(filteredJobs.length / JOBS_PER_PAGE)
   const paginatedJobs = filteredJobs.slice((currentPage - 1) * JOBS_PER_PAGE, currentPage * JOBS_PER_PAGE)
 
@@ -168,13 +168,13 @@ export default function JobsPage() {
 
   const pageBtn = (active: boolean, disabled?: boolean) => ({
     padding: "6px 12px", borderRadius: "8px", border: active ? "none" : "1px solid hsl(216 34% 25%)",
-    background: active ? "#7c3aed" : "transparent", color: active ? "white" : disabled ? "hsl(215 20% 35%)" : "hsl(215 20% 65%)",
+    background: active ? "#7c3aed" : "transparent",
+    color: active ? "white" : disabled ? "hsl(215 20% 35%)" : "hsl(215 20% 65%)",
     fontSize: "13px", fontWeight: "600" as const, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1
   })
 
   return (
     <div style={{ minHeight: "100vh", background: "hsl(224 71% 4%)", padding: "32px" }}>
-      {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px", flexWrap: "wrap" as const, gap: "12px" }}>
         <div>
           <h1 style={{ fontSize: "28px", fontWeight: "700", color: "hsl(213 31% 91%)", margin: "0 0 4px" }}>Browse Jobs</h1>
@@ -185,7 +185,8 @@ export default function JobsPage() {
         </div>
         <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" as const }}>
           <input value={fetchQuery} onChange={e => setFetchQuery(e.target.value)}
-            placeholder="e.g. React developer"
+            onKeyDown={e => e.key === "Enter" && fetchFreshJobs()}
+            placeholder="e.g. data engineer"
             style={{ background: "hsl(224 71% 8%)", border: "1px solid hsl(216 34% 17%)", borderRadius: "10px", padding: "10px 14px", color: "hsl(213 31% 91%)", fontSize: "14px", outline: "none", width: "200px" }} />
           <button onClick={fetchFreshJobs} disabled={fetching}
             style={{ background: "#7c3aed", color: "white", padding: "10px 20px", borderRadius: "10px", fontSize: "14px", fontWeight: "600", border: "none", cursor: "pointer", opacity: fetching ? 0.7 : 1, whiteSpace: "nowrap" as const }}>
@@ -202,11 +203,10 @@ export default function JobsPage() {
         </div>
       </div>
 
-      {/* Search + Sort row */}
       <div style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap" as const }}>
         <input
           style={{ flex: 1, minWidth: "200px", background: "hsl(224 71% 8%)", border: "1px solid hsl(216 34% 17%)", borderRadius: "10px", padding: "10px 16px", color: "hsl(213 31% 91%)", fontSize: "14px", outline: "none" }}
-          placeholder="Search by job title or company..."
+          placeholder="Filter by job title or company..."
           value={search} onChange={e => setSearch(e.target.value)}
         />
         <select value={sortBy} onChange={e => setSortBy(e.target.value)}
@@ -218,7 +218,6 @@ export default function JobsPage() {
         </select>
       </div>
 
-      {/* Filters */}
       <div style={{ display: "flex", gap: "8px", marginBottom: "20px", flexWrap: "wrap" as const, alignItems: "center" }}>
         <span style={{ fontSize: "12px", color: "hsl(215 20% 45%)", marginRight: "4px" }}>Mode:</span>
         {["all", "remote", "hybrid", "onsite"].map(v => (
@@ -241,7 +240,6 @@ export default function JobsPage() {
         </div>
       )}
 
-      {/* Jobs grid */}
       {loading ? (
         <div style={{ textAlign: "center", padding: "48px", color: "hsl(215 20% 45%)" }}>Loading jobs...</div>
       ) : paginatedJobs.length === 0 ? (
@@ -264,7 +262,7 @@ export default function JobsPage() {
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px" }}>
                     <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" as const }}>
                       {isFresh(job.posted_at) && (
-                        <span style={{ background: "rgba(34,197,94,0.15)", color: "#4ade80", fontSize: "10px", fontWeight: "700", padding: "2px 8px", borderRadius: "20px", letterSpacing: "0.5px" }}>NEW</span>
+                        <span style={{ background: "rgba(34,197,94,0.15)", color: "#4ade80", fontSize: "10px", fontWeight: "700", padding: "2px 8px", borderRadius: "20px" }}>NEW</span>
                       )}
                       {mc && job.ai_match_score && (
                         <span style={{ background: mc.bg, color: mc.color, fontSize: "11px", fontWeight: "700", padding: "2px 8px", borderRadius: "20px" }}>
@@ -314,12 +312,10 @@ export default function JobsPage() {
             })}
           </div>
 
-          {/* Pagination */}
           {totalPages > 1 && (
             <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "8px", flexWrap: "wrap" as const }}>
               <button onClick={() => setCurrentPage(1)} disabled={currentPage === 1} style={pageBtn(false, currentPage === 1)}>«</button>
               <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} style={pageBtn(false, currentPage === 1)}>‹ Prev</button>
-
               {Array.from({ length: totalPages }, (_, i) => i + 1)
                 .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 2)
                 .reduce((acc: (number | string)[], p, i, arr) => {
@@ -328,17 +324,13 @@ export default function JobsPage() {
                   return acc
                 }, [])
                 .map((p, i) => (
-                  <button key={i}
-                    onClick={() => typeof p === "number" && setCurrentPage(p)}
-                    disabled={p === "..."}
+                  <button key={i} onClick={() => typeof p === "number" && setCurrentPage(p)} disabled={p === "..."}
                     style={pageBtn(p === currentPage, p === "...")}>
                     {p}
                   </button>
                 ))}
-
               <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} style={pageBtn(false, currentPage === totalPages)}>Next ›</button>
               <button onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages} style={pageBtn(false, currentPage === totalPages)}>»</button>
-
               <span style={{ fontSize: "13px", color: "hsl(215 20% 45%)", marginLeft: "8px" }}>
                 Page {currentPage} of {totalPages} · {filteredJobs.length} jobs
               </span>

@@ -16,6 +16,8 @@ interface UIState {
   selectedSources: string[]
   toggleSource: (source: string) => void
   prefilledJob: PrefilledJob | null
+  lastJobSearch: string
+  setLastJobSearch: (q: string) => void
   setPrefilledJob: (job: PrefilledJob | null) => void
   clearPrefilledJob: () => void
 }
@@ -37,6 +39,8 @@ export const useUIStore = create<UIState>()(
             : [...s.selectedSources, source],
         })),
       prefilledJob: null,
+      lastJobSearch: "software engineer",
+      setLastJobSearch: (q) => set({ lastJobSearch: q }),
       setPrefilledJob: (job) => set({ prefilledJob: job }),
       clearPrefilledJob: () => set({ prefilledJob: null }),
     }),
@@ -46,6 +50,7 @@ export const useUIStore = create<UIState>()(
         autofillEngine: s.autofillEngine,
         selectedSources: s.selectedSources,
         prefilledJob: s.prefilledJob,
+        lastJobSearch: s.lastJobSearch,
       }),
     }
   )
