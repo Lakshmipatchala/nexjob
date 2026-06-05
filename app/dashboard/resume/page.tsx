@@ -17,7 +17,31 @@ export default function ResumePage() {
     if (prefilledJob) {
       setJobTitle(prefilledJob.jobTitle)
       setCompany(prefilledJob.company)
-      setJobDescription(prefilledJob.jobDescription)
+      // Clean the JD - remove addresses, recruiter info, keep only requirements
+      const raw = prefilledJob.jobDescription || ""
+      const cleaned = raw
+        .split("\n")
+        .filter(line => {
+          const l = line.toLowerCase()
+          return !l.match(/^\s*$/) &&
+            !l.includes("equal opportunity") &&
+            !l.includes("eeo") &&
+            !l.includes("apply now") &&
+            !l.includes("click here") &&
+            !l.includes("@") &&
+            !l.match(/\d{5}/) &&
+            !l.match(/\(\d{3}\)/) &&
+            !l.includes("salary range") &&
+            !l.includes("benefits include") &&
+            !l.includes("we offer") &&
+            !l.includes("about us") &&
+            !l.includes("our company") &&
+            !l.includes("primary work address") &&
+            !l.includes("work address")
+        })
+        .join("\n")
+        .trim()
+      setJobDescription(cleaned || raw)
       clearPrefilledJob()
     }
   }, [])
