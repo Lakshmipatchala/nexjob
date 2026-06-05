@@ -64,21 +64,18 @@ export default function JobsPage() {
   const [sortBy, setSortBy] = useState("newest")
   const [currentPage, setCurrentPage] = useState(1)
 
-  useEffect(() => {
-    getUser()
-  }, [])
-
+  useEffect(() => { initUser() }, [])
   useEffect(() => { setCurrentPage(1) }, [search, workModeFilter, typeFilter, sortBy])
 
-  async function getUser() {
+  async function initUser() {
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
       setUserId(user.id)
-      loadJobs(user.id)
-      loadSaved(user.id)
+      await loadSavedViaAPI(user.id)
+      await loadJobs(user.id, lastJobSearch)
     } else {
-      loadJobs("")
+      await loadJobs("", lastJobSearch)
     }
   }
 
@@ -96,31 +93,25 @@ export default function JobsPage() {
     setLoading(false)
   }
 
-  async function loadSaved(uid?: string) {
-    const id = uid !== undefined ? uid : userId
-    if (!id) return
-    const supabase = createClient()
-    const { data, error } = await supabase
-      .from("saved_jobs")
-      .select("job_id")
-      .eq("user_id", id)
-    if (error) { console.error("loadSaved:", error.message); return }
-    if (data) setSavedIds(new Set(data.map((r: any) => r.job_id)))
+  async function loadSavedViaAPI(uid: string) {
+    try {
+      const res = await fetch(`/api/saved?userId=${uid}`)
+      const data = await res.json()
+      if (data.savedIds) setSavedIds(new Set(data.savedIds))
+    } catch (e) { console.error("loadSaved error:", e) }
   }
 
   async function fetchFreshJobs() {
     setFetching(true)
     setLastJobSearch(fetchQuery)
-    setMessage(`Fetching "${fetchQuery}" jobs from multiple sources...`)
+    setMessage(`Fetching "${fetchQuery}" jobs...`)
     try {
       const res = await fetch(`/api/jobs/fetch?query=${encodeURIComponent(fetchQuery)}`)
       const data = await res.json()
       if (data.success) {
-        setMessage(data.message || `Fetched ${data.count} fresh jobs`)
-        loadJobs()
-      } else {
-        setMessage(`Error: ${data.error}`)
-      }
+        setMessage(data.message || `Fetched ${data.count} jobs`)
+        await loadJobs(undefined, fetchQuery)
+      } else setMessage(`Error: ${data.error}`)
     } catch (e: any) { setMessage(`Error: ${e.message}`) }
     setFetching(false)
   }
@@ -144,32 +135,32 @@ export default function JobsPage() {
   }
 
   async function toggleSave(job: Job) {
-    if (!userId) return
+    if (!userId) { setMessage("Please log in to save jobs"); return }
     setSavingId(job.id)
-    const supabase = createClient()
-
     try {
       if (savedIds.has(job.id)) {
-        const { error } = await supabase
-          .from("saved_jobs")
-          .delete()
-          .eq("user_id", userId)
-          .eq("job_id", job.id)
-        if (error) { console.error("unsave error:", error.message); setSavingId(null); return }
+        const res = await fetch("/api/saved", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId, jobId: job.id })
+        })
+        const data = await res.json()
+        if (data.error) { setMessage(`Error: ${data.error}`); setSavingId(null); return }
         setSavedIds(prev => { const n = new Set(prev); n.delete(job.id); return n })
+        setMessage("Job removed from saved")
       } else {
-        const { error } = await supabase
-          .from("saved_jobs")
-          .upsert({
-            user_id: userId,
-            job_id: job.id,
-            job_data: job,
-            saved_at: new Date().toISOString()
-          }, { onConflict: "user_id,job_id" })
-        if (error) { console.error("save error:", error.message); setSavingId(null); return }
+        const res = await fetch("/api/saved", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId, jobId: job.id, jobData: job })
+        })
+        const data = await res.json()
+        if (data.error) { setMessage(`Error: ${data.error}`); setSavingId(null); return }
         setSavedIds(prev => new Set([...prev, job.id]))
+        setMessage(`✓ "${job.title}" saved!`)
       }
-    } catch (e: any) { console.error("toggleSave exception:", e.message) }
+      setTimeout(() => setMessage(""), 2500)
+    } catch (e: any) { setMessage(`Error: ${e.message}`) }
     setSavingId(null)
   }
 
@@ -181,20 +172,19 @@ export default function JobsPage() {
   async function applyAndTrack(job: Job) {
     window.open(job.source_url, "_blank")
     if (!userId) return
-    const supabase = createClient()
-    const { error } = await supabase.from("applications").upsert({
-      user_id: userId,
-      job_id: job.id,
-      job_data: job,
-      status: "applied",
-      applied_at: new Date().toISOString()
-    }, { onConflict: "user_id,job_id" })
-    if (!error) {
-      // Remove from jobs list immediately
-      setAllJobs(prev => prev.filter(j => j.id !== job.id))
-      setMessage(`✓ "${job.title}" moved to Applications tracker`)
-      setTimeout(() => setMessage(""), 3000)
-    }
+    try {
+      const res = await fetch("/api/applications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, jobId: job.id, jobData: job, status: "applied" })
+      })
+      const data = await res.json()
+      if (!data.error) {
+        setAllJobs(prev => prev.filter(j => j.id !== job.id))
+        setMessage(`✓ "${job.title}" moved to Applications`)
+        setTimeout(() => setMessage(""), 3000)
+      }
+    } catch (e) { console.error(e) }
   }
 
   const filteredJobs = allJobs.filter(j => {
@@ -217,29 +207,26 @@ export default function JobsPage() {
     display: "inline-block" as const, fontSize: "11px", padding: "3px 10px",
     borderRadius: "20px", marginRight: "6px", background: bg, color, fontWeight: "500" as const
   })
-
   const filterBtn = (active: boolean) => ({
     padding: "6px 14px", borderRadius: "20px", border: active ? "none" : "1px solid hsl(216 34% 25%)",
     background: active ? "#7c3aed" : "transparent", color: active ? "white" : "hsl(215 20% 65%)",
     fontSize: "12px", fontWeight: "600" as const, cursor: "pointer"
   })
-
   const pageBtn = (active: boolean, disabled?: boolean) => ({
     padding: "6px 12px", borderRadius: "8px", border: active ? "none" : "1px solid hsl(216 34% 25%)",
     background: active ? "#7c3aed" : "transparent",
     color: active ? "white" : disabled ? "hsl(215 20% 35%)" : "hsl(215 20% 65%)",
     fontSize: "13px", fontWeight: "600" as const, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1
   })
-
   const sourceColor: Record<string, {color: string, bg: string}> = {
-    linkedin:    { color: "#60a5fa", bg: "rgba(96,165,250,0.1)" },
-    indeed:      { color: "#fbbf24", bg: "rgba(251,191,36,0.1)" },
-    glassdoor:   { color: "#4ade80", bg: "rgba(74,222,128,0.1)" },
-    remotive:    { color: "#f472b6", bg: "rgba(244,114,182,0.1)" },
-    adzuna:      { color: "#fb923c", bg: "rgba(251,146,60,0.1)" },
-    dice:        { color: "#a78bfa", bg: "rgba(167,139,250,0.1)" },
-    ziprecruiter:{ color: "#34d399", bg: "rgba(52,211,153,0.1)" },
-    other:       { color: "#94a3b8", bg: "rgba(148,163,184,0.1)" },
+    linkedin:     { color: "#60a5fa", bg: "rgba(96,165,250,0.1)" },
+    indeed:       { color: "#fbbf24", bg: "rgba(251,191,36,0.1)" },
+    glassdoor:    { color: "#4ade80", bg: "rgba(74,222,128,0.1)" },
+    remotive:     { color: "#f472b6", bg: "rgba(244,114,182,0.1)" },
+    adzuna:       { color: "#fb923c", bg: "rgba(251,146,60,0.1)" },
+    dice:         { color: "#a78bfa", bg: "rgba(167,139,250,0.1)" },
+    ziprecruiter: { color: "#34d399", bg: "rgba(52,211,153,0.1)" },
+    other:        { color: "#94a3b8", bg: "rgba(148,163,184,0.1)" },
   }
 
   return (
@@ -249,7 +236,6 @@ export default function JobsPage() {
           <h1 style={{ fontSize: "28px", fontWeight: "700", color: "hsl(213 31% 91%)", margin: "0 0 4px" }}>Browse Jobs</h1>
           <p style={{ color: "hsl(215 20% 65%)", fontSize: "13px", margin: "0" }}>
             {filteredJobs.length} active jobs
-            {filteredJobs.length !== allJobs.length && <span style={{ color: "hsl(215 20% 45%)" }}> (filtered from {allJobs.length})</span>}
             {savedIds.size > 0 && <span style={{ marginLeft: "10px", color: "#a78bfa" }}>· {savedIds.size} saved</span>}
           </p>
         </div>
@@ -274,11 +260,9 @@ export default function JobsPage() {
       </div>
 
       <div style={{ display: "flex", gap: "12px", marginBottom: "16px", flexWrap: "wrap" as const }}>
-        <input
-          style={{ flex: 1, minWidth: "200px", background: "hsl(224 71% 8%)", border: "1px solid hsl(216 34% 17%)", borderRadius: "10px", padding: "10px 16px", color: "hsl(213 31% 91%)", fontSize: "14px", outline: "none" }}
+        <input style={{ flex: 1, minWidth: "200px", background: "hsl(224 71% 8%)", border: "1px solid hsl(216 34% 17%)", borderRadius: "10px", padding: "10px 16px", color: "hsl(213 31% 91%)", fontSize: "14px", outline: "none" }}
           placeholder="Filter by job title or company..."
-          value={search} onChange={e => setSearch(e.target.value)}
-        />
+          value={search} onChange={e => setSearch(e.target.value)} />
         <select value={sortBy} onChange={e => setSortBy(e.target.value)}
           style={{ background: "hsl(224 71% 8%)", border: "1px solid hsl(216 34% 17%)", borderRadius: "10px", padding: "10px 14px", color: "hsl(213 31% 91%)", fontSize: "14px", outline: "none", cursor: "pointer" }}>
           <option value="newest">Newest first</option>
@@ -291,16 +275,12 @@ export default function JobsPage() {
       <div style={{ display: "flex", gap: "8px", marginBottom: "20px", flexWrap: "wrap" as const, alignItems: "center" }}>
         <span style={{ fontSize: "12px", color: "hsl(215 20% 45%)" }}>Mode:</span>
         {["all", "remote", "hybrid", "onsite"].map(v => (
-          <button key={v} style={filterBtn(workModeFilter === v)} onClick={() => setWorkModeFilter(v)}>
-            {v === "all" ? "All" : v}
-          </button>
+          <button key={v} style={filterBtn(workModeFilter === v)} onClick={() => setWorkModeFilter(v)}>{v === "all" ? "All" : v}</button>
         ))}
         <div style={{ width: "1px", background: "hsl(216 34% 17%)", margin: "0 8px", height: "20px" }} />
         <span style={{ fontSize: "12px", color: "hsl(215 20% 45%)" }}>Type:</span>
         {["all", "full_time", "contract", "part_time"].map(v => (
-          <button key={v} style={filterBtn(typeFilter === v)} onClick={() => setTypeFilter(v)}>
-            {v === "all" ? "All" : v.replace("_", " ")}
-          </button>
+          <button key={v} style={filterBtn(typeFilter === v)} onClick={() => setTypeFilter(v)}>{v === "all" ? "All" : v.replace("_", " ")}</button>
         ))}
       </div>
 
@@ -314,11 +294,11 @@ export default function JobsPage() {
         <div style={{ textAlign: "center", padding: "48px", color: "hsl(215 20% 45%)" }}>Loading jobs...</div>
       ) : paginatedJobs.length === 0 ? (
         <div style={{ textAlign: "center", padding: "48px", color: "hsl(215 20% 45%)" }}>
-          <p style={{ fontSize: "16px", marginBottom: "8px" }}>No jobs found</p>
-          <p style={{ fontSize: "13px", marginBottom: "16px" }}>Click Fetch Jobs to load fresh listings</p>
+          <p style={{ fontSize: "16px", marginBottom: "8px" }}>No jobs found for "{fetchQuery}"</p>
+          <p style={{ fontSize: "13px", marginBottom: "16px" }}>Click Fetch Jobs to search for these positions</p>
           <button onClick={fetchFreshJobs} disabled={fetching}
             style={{ background: "#7c3aed", color: "white", padding: "12px 24px", borderRadius: "10px", fontSize: "14px", fontWeight: "600", border: "none", cursor: "pointer" }}>
-            Fetch Jobs
+            {fetching ? "Fetching..." : "Fetch Jobs"}
           </button>
         </div>
       ) : (
@@ -333,40 +313,27 @@ export default function JobsPage() {
                 <div key={job.id} style={{ background: "hsl(224 71% 6%)", border: `1px solid ${isFresh(job.posted_at) ? "rgba(34,197,94,0.3)" : "hsl(216 34% 17%)"}`, borderRadius: "12px", padding: "20px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px" }}>
                     <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" as const }}>
-                      {isFresh(job.posted_at) && (
-                        <span style={{ background: "rgba(34,197,94,0.15)", color: "#4ade80", fontSize: "10px", fontWeight: "700", padding: "2px 8px", borderRadius: "20px" }}>NEW</span>
-                      )}
-                      {mc && job.ai_match_score && (
-                        <span style={{ background: mc.bg, color: mc.color, fontSize: "11px", fontWeight: "700", padding: "2px 8px", borderRadius: "20px" }}>
-                          {job.ai_match_score}% match
-                        </span>
-                      )}
+                      {isFresh(job.posted_at) && <span style={{ background: "rgba(34,197,94,0.15)", color: "#4ade80", fontSize: "10px", fontWeight: "700", padding: "2px 8px", borderRadius: "20px" }}>NEW</span>}
+                      {mc && job.ai_match_score && <span style={{ background: mc.bg, color: mc.color, fontSize: "11px", fontWeight: "700", padding: "2px 8px", borderRadius: "20px" }}>{job.ai_match_score}% match</span>}
                     </div>
                     <button onClick={() => toggleSave(job)} disabled={isSaving}
-                      title={saved ? "Remove from saved" : "Save job"}
-                      style={{ background: saved ? "rgba(124,58,237,0.2)" : "transparent", border: saved ? "1px solid rgba(124,58,237,0.4)" : "1px solid hsl(216 34% 25%)", borderRadius: "8px", padding: "5px 10px", cursor: isSaving ? "wait" : "pointer", fontSize: "12px", color: saved ? "#a78bfa" : "hsl(215 20% 55%)", fontWeight: "600" as const }}>
+                      style={{ background: saved ? "rgba(124,58,237,0.2)" : "transparent", border: saved ? "1px solid rgba(124,58,237,0.4)" : "1px solid hsl(216 34% 25%)", borderRadius: "8px", padding: "5px 10px", cursor: isSaving ? "wait" : "pointer", fontSize: "12px", color: saved ? "#a78bfa" : "hsl(215 20% 55%)", fontWeight: "600" as const, minWidth: "75px", textAlign: "center" as const }}>
                       {isSaving ? "..." : saved ? "★ Saved" : "☆ Save"}
                     </button>
                   </div>
-
                   <div style={{ display: "flex", alignItems: "flex-start", gap: "12px", marginBottom: "10px" }}>
-                    {job.company_logo && (
-                      <img src={job.company_logo} alt={job.company}
-                        style={{ width: "36px", height: "36px", borderRadius: "8px", objectFit: "contain", background: "white", padding: "2px", flexShrink: 0 }} />
-                    )}
+                    {job.company_logo && <img src={job.company_logo} alt={job.company} style={{ width: "36px", height: "36px", borderRadius: "8px", objectFit: "contain", background: "white", padding: "2px", flexShrink: 0 }} />}
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: "15px", fontWeight: "600", color: "hsl(213 31% 91%)", marginBottom: "3px" }}>{job.title}</div>
                       <div style={{ fontSize: "13px", color: "hsl(215 20% 65%)" }}>{job.company} · {job.location}</div>
                     </div>
                   </div>
-
                   <div style={{ marginBottom: "12px" }}>
                     <span style={badge(job.work_mode, job.work_mode === "remote" ? "#4ade80" : "#a78bfa", job.work_mode === "remote" ? "rgba(74,222,128,0.1)" : "rgba(124,110,245,0.15)")}>{job.work_mode}</span>
-                    <span style={badge(job.job_type, "#a78bfa", "rgba(124,110,245,0.15)")}>{job.job_type?.replace("_", " ")}</span>
+                    <span style={badge(job.job_type, "#a78bfa", "rgba(124,110,245,0.15)")}>{job.job_type?.replace("_"," ")}</span>
                     <span style={badge(job.source, sc.color, sc.bg)}>{job.source}</span>
-                    {job.salary_min && <span style={badge(`$${Math.round(job.salary_min / 1000)}k+`, "#fbbf24", "rgba(251,191,36,0.1)")}>${Math.round(job.salary_min / 1000)}k+</span>}
+                    {job.salary_min && <span style={badge(`$${Math.round(job.salary_min/1000)}k+`, "#fbbf24", "rgba(251,191,36,0.1)")}>${Math.round(job.salary_min/1000)}k+</span>}
                   </div>
-
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
                     <span style={{ fontSize: "12px", color: "hsl(215 20% 45%)" }}>🕐 {timeAgo(job.posted_at)}</span>
                     <div style={{ display: "flex", gap: "6px" }}>
@@ -384,27 +351,23 @@ export default function JobsPage() {
               )
             })}
           </div>
-
           {totalPages > 1 && (
             <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "8px", flexWrap: "wrap" as const }}>
               <button onClick={() => setCurrentPage(1)} disabled={currentPage === 1} style={pageBtn(false, currentPage === 1)}>«</button>
-              <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} style={pageBtn(false, currentPage === 1)}>‹ Prev</button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1)
-                .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 2)
-                .reduce((acc: (number | string)[], p, i, arr) => {
-                  if (i > 0 && (p as number) - (arr[i - 1] as number) > 1) acc.push("...")
-                  acc.push(p)
-                  return acc
+              <button onClick={() => setCurrentPage(p => Math.max(1, p-1))} disabled={currentPage === 1} style={pageBtn(false, currentPage === 1)}>‹ Prev</button>
+              {Array.from({length: totalPages}, (_, i) => i+1)
+                .filter(p => p===1 || p===totalPages || Math.abs(p-currentPage)<=2)
+                .reduce((acc:(number|string)[], p, i, arr) => {
+                  if (i>0 && (p as number)-(arr[i-1] as number)>1) acc.push("...")
+                  acc.push(p); return acc
                 }, [])
                 .map((p, i) => (
-                  <button key={i} onClick={() => typeof p === "number" && setCurrentPage(p)} disabled={p === "..."}
-                    style={pageBtn(p === currentPage, p === "...")}>{p}</button>
+                  <button key={i} onClick={() => typeof p==="number" && setCurrentPage(p)} disabled={p==="..."}
+                    style={pageBtn(p===currentPage, p==="...")}>{p}</button>
                 ))}
-              <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} style={pageBtn(false, currentPage === totalPages)}>Next ›</button>
-              <button onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages} style={pageBtn(false, currentPage === totalPages)}>»</button>
-              <span style={{ fontSize: "13px", color: "hsl(215 20% 45%)", marginLeft: "8px" }}>
-                Page {currentPage} of {totalPages}
-              </span>
+              <button onClick={() => setCurrentPage(p => Math.min(totalPages, p+1))} disabled={currentPage===totalPages} style={pageBtn(false, currentPage===totalPages)}>Next ›</button>
+              <button onClick={() => setCurrentPage(totalPages)} disabled={currentPage===totalPages} style={pageBtn(false, currentPage===totalPages)}>»</button>
+              <span style={{ fontSize: "13px", color: "hsl(215 20% 45%)", marginLeft: "8px" }}>Page {currentPage} of {totalPages}</span>
             </div>
           )}
         </>
