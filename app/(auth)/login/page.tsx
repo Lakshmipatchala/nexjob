@@ -6,16 +6,38 @@ import { useRouter } from "next/navigation"
 
 type AuthMode = "email" | "phone"
 
+const COUNTRIES = [
+  { code: "+1", flag: "🇺🇸", name: "US/Canada" },
+  { code: "+44", flag: "🇬🇧", name: "UK" },
+  { code: "+91", flag: "🇮🇳", name: "India" },
+  { code: "+61", flag: "🇦🇺", name: "Australia" },
+  { code: "+49", flag: "🇩🇪", name: "Germany" },
+  { code: "+33", flag: "🇫🇷", name: "France" },
+  { code: "+971", flag: "🇦🇪", name: "UAE" },
+  { code: "+65", flag: "🇸🇬", name: "Singapore" },
+  { code: "+81", flag: "🇯🇵", name: "Japan" },
+  { code: "+86", flag: "🇨🇳", name: "China" },
+  { code: "+55", flag: "🇧🇷", name: "Brazil" },
+  { code: "+52", flag: "🇲🇽", name: "Mexico" },
+  { code: "+27", flag: "🇿🇦", name: "South Africa" },
+  { code: "+234", flag: "🇳🇬", name: "Nigeria" },
+  { code: "+92", flag: "🇵🇰", name: "Pakistan" },
+  { code: "+880", flag: "🇧🇩", name: "Bangladesh" },
+]
+
 export default function LoginPage() {
   const [mode, setMode] = useState<AuthMode>("email")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [countryCode, setCountryCode] = useState("+1")
   const [phone, setPhone] = useState("")
   const [otp, setOtp] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
   const [otpSent, setOtpSent] = useState(false)
   const router = useRouter()
+
+  const fullPhone = `${countryCode}${phone.replace(/\D/g, "")}`
 
   async function handleEmailLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -42,8 +64,7 @@ export default function LoginPage() {
     setLoading(true)
     setError("")
     const supabase = createClient()
-    const formatted = phone.startsWith("+") ? phone : `+1${phone.replace(/\D/g, "")}`
-    const { error } = await supabase.auth.signInWithOtp({ phone: formatted })
+    const { error } = await supabase.auth.signInWithOtp({ phone: fullPhone })
     if (error) { setError(error.message); setLoading(false); return }
     setOtpSent(true)
     setLoading(false)
@@ -54,8 +75,7 @@ export default function LoginPage() {
     setLoading(true)
     setError("")
     const supabase = createClient()
-    const formatted = phone.startsWith("+") ? phone : `+1${phone.replace(/\D/g, "")}`
-    const { data, error } = await supabase.auth.verifyOtp({ phone: formatted, token: otp, type: "sms" })
+    const { data, error } = await supabase.auth.verifyOtp({ phone: fullPhone, token: otp, type: "sms" })
     if (error) { setError(error.message); setLoading(false); return }
     if (data.session) { router.refresh(); router.push("/dashboard") }
     setLoading(false)
@@ -73,7 +93,6 @@ export default function LoginPage() {
         <p style={{ color: "hsl(215 20% 65%)", fontSize: "15px" }}>Welcome back</p>
       </div>
 
-      {/* Google Sign In */}
       <button onClick={handleGoogleLogin} disabled={loading}
         style={{ width: "100%", background: "white", color: "#1a1a1a", padding: "11px", borderRadius: "10px", fontSize: "14px", fontWeight: "600", border: "1px solid #ddd", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "10px", marginBottom: "20px" }}>
         <svg width="18" height="18" viewBox="0 0 48 48">
@@ -109,11 +128,22 @@ export default function LoginPage() {
         <form onSubmit={otpSent ? handleVerifyOtp : handleSendOtp}>
           <div style={{ marginBottom: "16px" }}>
             <label style={labelStyle}>Phone number</label>
-            <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+1 (555) 000-0000" required disabled={otpSent} style={{ ...inputStyle, opacity: otpSent ? 0.6 : 1 }} />
+            <div style={{ display: "flex", gap: "8px" }}>
+              <select value={countryCode} onChange={e => setCountryCode(e.target.value)} disabled={otpSent}
+                style={{ background: "hsl(224 71% 8%)", border: "1px solid hsl(216 34% 17%)", borderRadius: "10px", padding: "11px 10px", color: "hsl(213 31% 91%)", fontSize: "13px", outline: "none", cursor: "pointer", minWidth: "120px", opacity: otpSent ? 0.6 : 1 }}>
+                {COUNTRIES.map(c => (
+                  <option key={c.code} value={c.code}>{c.flag} {c.code} {c.name}</option>
+                ))}
+              </select>
+              <input type="tel" value={phone} onChange={e => setPhone(e.target.value)}
+                placeholder="555 000 0000" required disabled={otpSent}
+                style={{ ...inputStyle, opacity: otpSent ? 0.6 : 1 }} />
+            </div>
+            {phone && <div style={{ fontSize: "11px", color: "hsl(215 20% 45%)", marginTop: "4px" }}>Will send to: {fullPhone}</div>}
           </div>
           {otpSent && (
             <div style={{ marginBottom: "16px" }}>
-              <label style={labelStyle}>Enter the 6-digit code</label>
+              <label style={labelStyle}>Enter the 6-digit code sent to {fullPhone}</label>
               <input type="text" value={otp} onChange={e => setOtp(e.target.value)} placeholder="123456" maxLength={6} required style={inputStyle} />
               <button type="button" onClick={() => setOtpSent(false)} style={{ marginTop: "6px", background: "none", border: "none", color: "#a78bfa", fontSize: "12px", cursor: "pointer", padding: 0 }}>Wrong number?</button>
             </div>
