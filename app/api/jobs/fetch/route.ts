@@ -1,6 +1,19 @@
 ﻿import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 
+function isValidJob(title: string, location: string, isRemote: boolean): boolean {
+  if (!title) return false
+  // Block German/European job patterns
+  if (title.includes("(m/w/d)") || title.includes("(m/f/d)") || title.includes("(w/m/d)")) return false
+  // For onsite jobs, must be US
+  if (!isRemote) {
+    const loc = location.toLowerCase()
+    const usPatterns = ["usa", "united states", ", al", ", ak", ", az", ", ar", ", ca", ", co", ", ct", ", de", ", fl", ", ga", ", hi", ", id", ", il", ", in", ", ia", ", ks", ", ky", ", la", ", me", ", md", ", ma", ", mi", ", mn", ", ms", ", mo", ", mt", ", ne", ", nv", ", nh", ", nj", ", nm", ", ny", ", nc", ", nd", ", oh", ", ok", ", or", ", pa", ", ri", ", sc", ", sd", ", tn", ", tx", ", ut", ", vt", ", va", ", wa", ", wv", ", wi", ", wy", "new york", "san francisco", "los angeles", "chicago", "seattle", "boston", "austin", "denver", "atlanta", "dallas", "remote"]
+    return usPatterns.some(p => loc.includes(p))
+  }
+  return true
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
@@ -13,20 +26,23 @@ export async function GET(request: Request) {
 
     const allJobs: any[] = []
 
-    // Source 1 — JSearch RapidAPI (LinkedIn, Indeed, Glassdoor, Dice)
+    // Source 1 — JSearch (LinkedIn, Indeed, Glassdoor, Dice) - US focused
     try {
       const res = await fetch(
-        `https://jsearch.p.rapidapi.com/search?query=${encodeURIComponent(query)}&num_pages=5&country=us&date_posted=week`,
+        `https://jsearch.p.rapidapi.com/search?query=${encodeURIComponent(query + " USA")}&num_pages=5&country=us&date_posted=week`,
         { headers: { "x-rapidapi-host": "jsearch.p.rapidapi.com", "x-rapidapi-key": process.env.RAPIDAPI_KEY! } }
       )
       const data = await res.json()
       for (const job of (data.data || [])) {
+        const isRemote = job.job_is_remote === true
+        const location = job.job_city ? `${job.job_city}, ${job.job_state || job.job_country}` : isRemote ? "Remote" : "US"
+        if (!isValidJob(job.job_title, location, isRemote)) continue
         allJobs.push({
           title: job.job_title,
           company: job.employer_name,
           company_logo: job.employer_logo,
-          location: job.job_city ? `${job.job_city}, ${job.job_state || job.job_country}` : "Remote",
-          work_mode: job.job_is_remote ? "remote" : "onsite",
+          location,
+          work_mode: isRemote ? "remote" : "onsite",
           job_type: job.job_employment_type?.toLowerCase().includes("full") ? "full_time" : "contract",
           salary_min: job.job_min_salary || null,
           salary_max: job.job_max_salary || null,
@@ -46,17 +62,17 @@ export async function GET(request: Request) {
       console.log(`JSearch: ${allJobs.length} jobs`)
     } catch (e) { console.error("JSearch error:", e) }
 
-    // Source 2 — Remotive (free, unlimited remote jobs)
+    // Source 2 — Remotive (remote only - worldwide OK)
     try {
-      const keywords = query.split(" ").slice(0, 2).join("-")
       const res = await fetch(`https://remotive.com/api/remote-jobs?search=${encodeURIComponent(query)}&limit=100`)
       const data = await res.json()
       for (const job of (data.jobs || [])) {
+        if (!isValidJob(job.title, "remote", true)) continue
         allJobs.push({
           title: job.title,
           company: job.company_name,
           company_logo: job.company_logo,
-          location: job.candidate_required_location || "Remote",
+          location: job.candidate_required_location || "Remote (Worldwide)",
           work_mode: "remote",
           job_type: "full_time",
           salary_min: null,
@@ -73,72 +89,17 @@ export async function GET(request: Request) {
       console.log(`Remotive: ${allJobs.length} total`)
     } catch (e) { console.error("Remotive error:", e) }
 
-    // Source 3 — Arbeitnow (free, unlimited tech jobs)
-    try {
-      const res = await fetch(`https://www.arbeitnow.com/api/job-board-api?search=${encodeURIComponent(query)}`)
-      const data = await res.json()
-      for (const job of (data.data || [])) {
-        allJobs.push({
-          title: job.title,
-          company: job.company_name,
-          company_logo: null,
-          location: job.location || "Remote",
-          work_mode: job.remote ? "remote" : "onsite",
-          job_type: "full_time",
-          salary_min: null,
-          salary_max: null,
-          source: "arbeitnow",
-          source_url: job.url,
-          description: job.description?.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 5000) || "",
-          external_id: `arbeitnow_${job.slug}`,
-          posted_at: job.created_at ? new Date(job.created_at * 1000).toISOString() : new Date().toISOString(),
-          is_active: true,
-          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        })
-      }
-      console.log(`Arbeitnow: ${allJobs.length} total`)
-    } catch (e) { console.error("Arbeitnow error:", e) }
-
-    // Source 4 — The Muse (free, unlimited)
-    try {
-      const res = await fetch(`https://www.themuse.com/api/public/jobs?descending=true&page=1&level=Senior+Level&level=Mid+Level`)
-      const data = await res.json()
-      const keyword = query.toLowerCase()
-      for (const job of (data.results || []).filter((j: any) =>
-        j.name?.toLowerCase().includes(keyword) ||
-        j.categories?.some((c: any) => c.name?.toLowerCase().includes(keyword))
-      )) {
-        allJobs.push({
-          title: job.name,
-          company: job.company?.name || "Unknown",
-          company_logo: job.company?.refs?.landing_page || null,
-          location: job.locations?.[0]?.name || "Remote",
-          work_mode: job.locations?.[0]?.name?.toLowerCase().includes("remote") ? "remote" : "onsite",
-          job_type: "full_time",
-          salary_min: null,
-          salary_max: null,
-          source: "themuse",
-          source_url: job.refs?.landing_page || "",
-          description: job.contents?.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 5000) || "",
-          external_id: `themuse_${job.id}`,
-          posted_at: job.publication_date || new Date().toISOString(),
-          is_active: true,
-          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        })
-      }
-      console.log(`TheMuse: ${allJobs.length} total`)
-    } catch (e) { console.error("TheMuse error:", e) }
-
-    // Source 5 — Jobicy (free remote jobs)
+    // Source 3 — Jobicy (remote only - worldwide OK)
     try {
       const res = await fetch(`https://jobicy.com/api/v2/remote-jobs?count=50&tag=${encodeURIComponent(query.split(" ")[0])}`)
       const data = await res.json()
       for (const job of (data.jobs || [])) {
+        if (!isValidJob(job.jobTitle, "remote", true)) continue
         allJobs.push({
           title: job.jobTitle,
           company: job.companyName,
           company_logo: job.companyLogo || null,
-          location: job.jobGeo || "Remote",
+          location: job.jobGeo || "Remote (Worldwide)",
           work_mode: "remote",
           job_type: job.jobType?.includes("full") ? "full_time" : "contract",
           salary_min: null,
@@ -155,88 +116,91 @@ export async function GET(request: Request) {
       console.log(`Jobicy: ${allJobs.length} total`)
     } catch (e) { console.error("Jobicy error:", e) }
 
-    // Source 6 — Adzuna (free tier)
+    // Source 4 — The Muse (US focused tech companies)
+    try {
+      const res = await fetch(`https://www.themuse.com/api/public/jobs?descending=true&page=1`)
+      const data = await res.json()
+      const keyword = query.toLowerCase()
+      for (const job of (data.results || []).filter((j: any) =>
+        j.name?.toLowerCase().includes(keyword) ||
+        j.categories?.some((c: any) => c.name?.toLowerCase().includes(keyword))
+      ).slice(0, 20)) {
+        const location = job.locations?.[0]?.name || "Remote"
+        const isRemote = location.toLowerCase().includes("remote") || location.toLowerCase().includes("flexible")
+        if (!isValidJob(job.name, location, isRemote)) continue
+        allJobs.push({
+          title: job.name,
+          company: job.company?.name || "Unknown",
+          company_logo: null,
+          location,
+          work_mode: isRemote ? "remote" : "onsite",
+          job_type: "full_time",
+          salary_min: null,
+          salary_max: null,
+          source: "themuse",
+          source_url: job.refs?.landing_page || "",
+          description: job.contents?.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 5000) || "",
+          external_id: `themuse_${job.id}`,
+          posted_at: job.publication_date || new Date().toISOString(),
+          is_active: true,
+          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        })
+      }
+      console.log(`TheMuse: ${allJobs.length} total`)
+    } catch (e) { console.error("TheMuse error:", e) }
+
+    // Source 5 — Adzuna US only
     if (process.env.ADZUNA_APP_ID && process.env.ADZUNA_APP_KEY) {
       try {
-        for (let page = 1; page <= 3; page++) {
-          const res = await fetch(
-            `https://api.adzuna.com/v1/api/jobs/us/search/${page}?app_id=${process.env.ADZUNA_APP_ID}&app_key=${process.env.ADZUNA_APP_KEY}&what=${encodeURIComponent(query)}&results_per_page=50&max_days_old=7`
-          )
-          const data = await res.json()
-          const jobs = data.results || []
-          if (jobs.length === 0) break
-          for (const job of jobs) {
-            allJobs.push({
-              title: job.title,
-              company: job.company?.display_name || "Unknown",
-              company_logo: null,
-              location: job.location?.display_name || "US",
-              work_mode: job.title?.toLowerCase().includes("remote") ? "remote" : "onsite",
-              job_type: job.contract_time === "full_time" ? "full_time" : "contract",
-              salary_min: job.salary_min || null,
-              salary_max: job.salary_max || null,
-              source: "adzuna",
-              source_url: job.redirect_url,
-              description: job.description?.slice(0, 5000) || "",
-              external_id: `adzuna_${job.id}`,
-              posted_at: job.created || new Date().toISOString(),
-              is_active: true,
-              expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-            })
-          }
+        const res = await fetch(
+          `https://api.adzuna.com/v1/api/jobs/us/search/1?app_id=${process.env.ADZUNA_APP_ID}&app_key=${process.env.ADZUNA_APP_KEY}&what=${encodeURIComponent(query)}&results_per_page=50&max_days_old=7`
+        )
+        const data = await res.json()
+        for (const job of (data.results || [])) {
+          const location = job.location?.display_name || "US"
+          const isRemote = job.title?.toLowerCase().includes("remote") || location.toLowerCase().includes("remote")
+          if (!isValidJob(job.title, location, isRemote)) continue
+          allJobs.push({
+            title: job.title,
+            company: job.company?.display_name || "Unknown",
+            company_logo: null,
+            location,
+            work_mode: isRemote ? "remote" : "onsite",
+            job_type: job.contract_time === "full_time" ? "full_time" : "contract",
+            salary_min: job.salary_min || null,
+            salary_max: job.salary_max || null,
+            source: "adzuna",
+            source_url: job.redirect_url,
+            description: job.description?.slice(0, 5000) || "",
+            external_id: `adzuna_${job.id}`,
+            posted_at: job.created || new Date().toISOString(),
+            is_active: true,
+            expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+          })
         }
         console.log(`Adzuna: ${allJobs.length} total`)
       } catch (e) { console.error("Adzuna error:", e) }
     }
 
-    // Source 7 — USAJobs (free, unlimited government jobs)
+    // Source 6 — Greenhouse (top US tech companies)
     try {
-      const res = await fetch(
-        `https://data.usajobs.gov/api/search?Keyword=${encodeURIComponent(query)}&ResultsPerPage=50&DatePosted=7`,
-        { headers: { "Host": "data.usajobs.gov", "User-Agent": "nexjob-app", "Authorization-Key": "" } }
-      )
-      const data = await res.json()
-      for (const item of (data.SearchResult?.SearchResultItems || [])) {
-        const job = item.MatchedObjectDescriptor
-        allJobs.push({
-          title: job.PositionTitle,
-          company: job.OrganizationName,
-          company_logo: null,
-          location: job.PositionLocationDisplay || "US",
-          work_mode: "onsite",
-          job_type: "full_time",
-          salary_min: parseFloat(job.PositionRemuneration?.[0]?.MinimumRange) || null,
-          salary_max: parseFloat(job.PositionRemuneration?.[0]?.MaximumRange) || null,
-          source: "usajobs",
-          source_url: job.PositionURI,
-          description: job.UserArea?.Details?.JobSummary?.slice(0, 5000) || "",
-          external_id: `usajobs_${job.PositionID}`,
-          posted_at: job.PublicationStartDate || new Date().toISOString(),
-          is_active: true,
-          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        })
-      }
-      console.log(`USAJobs: ${allJobs.length} total`)
-    } catch (e) { console.error("USAJobs error:", e) }
-
-    // Source 8 — Greenhouse (direct company job boards - free unlimited)
-    try {
-      const companies = ["airbnb", "stripe", "notion", "figma", "vercel", "anthropic", "openai", "databricks", "snowflake", "confluent", "mongodb", "elastic", "hashicorp", "cloudflare", "datadog"]
+      const companies = ["stripe", "notion", "figma", "anthropic", "databricks", "snowflake", "confluent", "mongodb", "elastic", "cloudflare", "datadog", "github", "gitlab", "hashicorp", "twilio"]
+      const keyword = query.toLowerCase()
       for (const company of companies) {
         try {
           const res = await fetch(`https://boards-api.greenhouse.io/v1/boards/${company}/jobs?content=true`)
           const data = await res.json()
-          const keyword = query.toLowerCase()
           for (const job of (data.jobs || []).filter((j: any) =>
-            j.title?.toLowerCase().includes(keyword) ||
-            j.departments?.some((d: any) => d.name?.toLowerCase().includes("engineer") || d.name?.toLowerCase().includes("data"))
-          ).slice(0, 5)) {
+            j.title?.toLowerCase().includes(keyword)
+          ).slice(0, 3)) {
+            const location = job.location?.name || "Remote"
+            const isRemote = location.toLowerCase().includes("remote")
             allJobs.push({
               title: job.title,
               company: company.charAt(0).toUpperCase() + company.slice(1),
               company_logo: null,
-              location: job.location?.name || "Remote",
-              work_mode: job.location?.name?.toLowerCase().includes("remote") ? "remote" : "onsite",
+              location,
+              work_mode: isRemote ? "remote" : "onsite",
               job_type: "full_time",
               salary_min: null,
               salary_max: null,
@@ -254,25 +218,25 @@ export async function GET(request: Request) {
       console.log(`Greenhouse: ${allJobs.length} total`)
     } catch (e) { console.error("Greenhouse error:", e) }
 
-    // Source 9 — Lever (direct company job boards - free unlimited)
+    // Source 7 — Lever (top US tech companies)
     try {
-      const leverCompanies = ["netflix", "uber", "lyft", "pinterest", "reddit", "squarespace", "duolingo", "carta", "plaid", "brex"]
+      const leverCompanies = ["netflix", "uber", "lyft", "reddit", "duolingo", "carta", "plaid", "brex", "rippling", "airtable"]
+      const keyword = query.toLowerCase()
       for (const company of leverCompanies) {
         try {
           const res = await fetch(`https://api.lever.co/v0/postings/${company}?mode=json`)
           const jobs = await res.json()
-          const keyword = query.toLowerCase()
           for (const job of (Array.isArray(jobs) ? jobs : []).filter((j: any) =>
-            j.text?.toLowerCase().includes(keyword) ||
-            j.categories?.team?.toLowerCase().includes("engineer") ||
-            j.categories?.team?.toLowerCase().includes("data")
-          ).slice(0, 5)) {
+            j.text?.toLowerCase().includes(keyword)
+          ).slice(0, 3)) {
+            const location = job.categories?.location || "Remote"
+            const isRemote = location.toLowerCase().includes("remote")
             allJobs.push({
               title: job.text,
               company: company.charAt(0).toUpperCase() + company.slice(1),
               company_logo: null,
-              location: job.categories?.location || "Remote",
-              work_mode: job.categories?.location?.toLowerCase().includes("remote") ? "remote" : "onsite",
+              location,
+              work_mode: isRemote ? "remote" : "onsite",
               job_type: "full_time",
               salary_min: null,
               salary_max: null,
@@ -312,8 +276,8 @@ export async function GET(request: Request) {
     return NextResponse.json({
       success: true,
       count: saved,
-      sources: "JSearch + Remotive + Arbeitnow + TheMuse + Jobicy + Adzuna + USAJobs",
-      message: `✓ Fetched ${saved} jobs from 7 free sources!`
+      sources: "JSearch + Remotive + Jobicy + TheMuse + Adzuna + Greenhouse + Lever",
+      message: `✓ Fetched ${saved} US & Remote jobs from 7 sources`
     })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
