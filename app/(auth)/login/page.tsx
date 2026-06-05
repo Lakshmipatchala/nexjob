@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 import { useState } from "react"
 import { createClient } from "@/lib/supabase"
 import Link from "next/link"
@@ -26,6 +26,15 @@ export default function LoginPage() {
     if (error) { setError(error.message); setLoading(false); return }
     if (data.session) { router.refresh(); router.push("/dashboard") }
     setLoading(false)
+  }
+
+  async function handleGoogleLogin() {
+    setLoading(true)
+    const supabase = createClient()
+    await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: `${window.location.origin}/auth/callback` }
+    })
   }
 
   async function handleSendOtp(e: React.FormEvent) {
@@ -64,6 +73,24 @@ export default function LoginPage() {
         <p style={{ color: "hsl(215 20% 65%)", fontSize: "15px" }}>Welcome back</p>
       </div>
 
+      {/* Google Sign In */}
+      <button onClick={handleGoogleLogin} disabled={loading}
+        style={{ width: "100%", background: "white", color: "#1a1a1a", padding: "11px", borderRadius: "10px", fontSize: "14px", fontWeight: "600", border: "1px solid #ddd", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "10px", marginBottom: "20px" }}>
+        <svg width="18" height="18" viewBox="0 0 48 48">
+          <path fill="#FFC107" d="M43.6 20H24v8h11.3C33.6 33.1 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.8 1.1 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20c11 0 20-9 20-20 0-1.3-.1-2.7-.4-4z"/>
+          <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.1 18.9 12 24 12c3 0 5.8 1.1 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/>
+          <path fill="#4CAF50" d="M24 44c5.2 0 9.9-1.9 13.5-5.1l-6.2-5.2C29.4 35.5 26.8 36 24 36c-5.1 0-9.5-2.9-11.2-7.1l-6.5 5C9.8 39.7 16.4 44 24 44z"/>
+          <path fill="#1976D2" d="M43.6 20H24v8h11.3c-.9 2.6-2.6 4.7-4.9 6.2l6.2 5.2C40.2 36.1 44 30.5 44 24c0-1.3-.1-2.7-.4-4z"/>
+        </svg>
+        Continue with Google
+      </button>
+
+      <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "20px" }}>
+        <div style={{ flex: 1, height: "1px", background: "hsl(216 34% 17%)" }} />
+        <span style={{ fontSize: "12px", color: "hsl(215 20% 45%)" }}>or sign in with</span>
+        <div style={{ flex: 1, height: "1px", background: "hsl(216 34% 17%)" }} />
+      </div>
+
       <div style={{ display: "flex", gap: "8px", marginBottom: "24px", background: "hsl(224 71% 4%)", borderRadius: "10px", padding: "4px" }}>
         <button style={mode === "email" ? tabActive : tabInactive} onClick={() => setMode("email")}>📧 Email</button>
         <button style={mode === "phone" ? tabActive : tabInactive} onClick={() => setMode("phone")}>📱 Phone SMS</button>
@@ -73,12 +100,7 @@ export default function LoginPage() {
         <form onSubmit={handleEmailLogin}>
           <div style={{ marginBottom: "16px" }}><label style={labelStyle}>Email</label><input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@email.com" required style={inputStyle} /></div>
           <div style={{ marginBottom: "24px" }}><label style={labelStyle}>Password</label><input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Your password" required style={inputStyle} /></div>
-          {error && (
-            <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "8px", padding: "10px 14px", fontSize: "13px", color: "#f87171", marginBottom: "16px" }}>
-              {error}
-              {error.includes("Invalid") && <div style={{ marginTop: "6px", fontSize: "12px" }}>No account? <a href="/signup" style={{ color: "#a78bfa" }}>Create one</a></div>}
-            </div>
-          )}
+          {error && <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "8px", padding: "10px 14px", fontSize: "13px", color: "#f87171", marginBottom: "16px" }}>{error}</div>}
           <button type="submit" disabled={loading} style={{ width: "100%", background: "#7c3aed", color: "white", padding: "12px", borderRadius: "10px", fontSize: "14px", fontWeight: "600", border: "none", cursor: "pointer", opacity: loading ? 0.7 : 1 }}>
             {loading ? "Signing in..." : "Sign in"}
           </button>
@@ -93,9 +115,7 @@ export default function LoginPage() {
             <div style={{ marginBottom: "16px" }}>
               <label style={labelStyle}>Enter the 6-digit code</label>
               <input type="text" value={otp} onChange={e => setOtp(e.target.value)} placeholder="123456" maxLength={6} required style={inputStyle} />
-              <button type="button" onClick={() => setOtpSent(false)} style={{ marginTop: "6px", background: "none", border: "none", color: "#a78bfa", fontSize: "12px", cursor: "pointer", padding: 0 }}>
-                Wrong number?
-              </button>
+              <button type="button" onClick={() => setOtpSent(false)} style={{ marginTop: "6px", background: "none", border: "none", color: "#a78bfa", fontSize: "12px", cursor: "pointer", padding: 0 }}>Wrong number?</button>
             </div>
           )}
           {error && <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "8px", padding: "10px 14px", fontSize: "13px", color: "#f87171", marginBottom: "16px" }}>{error}</div>}
