@@ -143,7 +143,7 @@ export async function GET(request: Request) {
       mapped.push({
         ...job,
         description: cleanedDesc,
-        raw_description: undefined,
+
       })
     }
 
