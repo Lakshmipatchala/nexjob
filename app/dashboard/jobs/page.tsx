@@ -1,5 +1,5 @@
 ﻿"use client"
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState } from "react"
 import { createClient } from "@/lib/supabase"
 import { useUIStore } from "@/store/ui.store"
 import { useRouter } from "next/navigation"
@@ -49,6 +49,7 @@ export default function JobsPage() {
   const setPrefilledJob = useUIStore(s => s.setPrefilledJob)
   const router = useRouter()
 
+  const [userId, setUserId] = useState<string>("")
   const [allJobs, setAllJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
   const [fetching, setFetching] = useState(false)
@@ -63,38 +64,60 @@ export default function JobsPage() {
   const [sortBy, setSortBy] = useState("newest")
   const [currentPage, setCurrentPage] = useState(1)
 
-  useEffect(() => { loadJobs(); loadSaved() }, [])
+  useEffect(() => {
+    getUser()
+  }, [])
+
   useEffect(() => { setCurrentPage(1) }, [search, workModeFilter, typeFilter, sortBy])
 
-  async function loadJobs() {
+  async function getUser() {
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      setUserId(user.id)
+      loadJobs(user.id)
+      loadSaved(user.id)
+    } else {
+      loadJobs("")
+    }
+  }
+
+  async function loadJobs(uid?: string) {
     setLoading(true)
-    const res = await fetch(`/api/jobs/list`)
+    const id = uid !== undefined ? uid : userId
+    const res = await fetch(`/api/jobs/list${id ? `?userId=${id}` : ""}`)
     const data = await res.json()
     if (data.error) { setMessage(`Error: ${data.error}`); setLoading(false); return }
     setAllJobs(data.jobs || [])
     setLoading(false)
   }
 
-  async function loadSaved() {
+  async function loadSaved(uid?: string) {
+    const id = uid !== undefined ? uid : userId
+    if (!id) return
     const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
     const { data, error } = await supabase
       .from("saved_jobs")
       .select("job_id")
-      .eq("user_id", user.id)
-    if (error) { console.error("loadSaved error:", error.message); return }
+      .eq("user_id", id)
+    if (error) { console.error("loadSaved:", error.message); return }
     if (data) setSavedIds(new Set(data.map((r: any) => r.job_id)))
   }
 
   async function fetchFreshJobs() {
     setFetching(true)
     setLastJobSearch(fetchQuery)
-    setMessage(`Fetching "${fetchQuery}" jobs...`)
-    const res = await fetch(`/api/jobs/fetch?query=${encodeURIComponent(fetchQuery)}`)
-    const data = await res.json()
-    if (data.success) { setMessage(data.message || `Found ${data.count} fresh jobs`); loadJobs() }
-    else setMessage(`Error: ${data.error}`)
+    setMessage(`Fetching "${fetchQuery}" jobs from multiple sources...`)
+    try {
+      const res = await fetch(`/api/jobs/fetch?query=${encodeURIComponent(fetchQuery)}`)
+      const data = await res.json()
+      if (data.success) {
+        setMessage(data.message || `Fetched ${data.count} fresh jobs`)
+        loadJobs()
+      } else {
+        setMessage(`Error: ${data.error}`)
+      }
+    } catch (e: any) { setMessage(`Error: ${e.message}`) }
     setFetching(false)
   }
 
@@ -117,31 +140,32 @@ export default function JobsPage() {
   }
 
   async function toggleSave(job: Job) {
+    if (!userId) return
     setSavingId(job.id)
     const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setSavingId(null); return }
 
-    if (savedIds.has(job.id)) {
-      const { error } = await supabase
-        .from("saved_jobs")
-        .delete()
-        .eq("user_id", user.id)
-        .eq("job_id", job.id)
-      if (error) { console.error("unsave error:", error.message); setSavingId(null); return }
-      setSavedIds(prev => { const n = new Set(prev); n.delete(job.id); return n })
-    } else {
-      const { error } = await supabase
-        .from("saved_jobs")
-        .insert({
-          user_id: user.id,
-          job_id: job.id,
-          job_data: job,
-          saved_at: new Date().toISOString()
-        })
-      if (error) { console.error("save error:", error.message); setSavingId(null); return }
-      setSavedIds(prev => new Set([...prev, job.id]))
-    }
+    try {
+      if (savedIds.has(job.id)) {
+        const { error } = await supabase
+          .from("saved_jobs")
+          .delete()
+          .eq("user_id", userId)
+          .eq("job_id", job.id)
+        if (error) { console.error("unsave error:", error.message); setSavingId(null); return }
+        setSavedIds(prev => { const n = new Set(prev); n.delete(job.id); return n })
+      } else {
+        const { error } = await supabase
+          .from("saved_jobs")
+          .upsert({
+            user_id: userId,
+            job_id: job.id,
+            job_data: job,
+            saved_at: new Date().toISOString()
+          }, { onConflict: "user_id,job_id" })
+        if (error) { console.error("save error:", error.message); setSavingId(null); return }
+        setSavedIds(prev => new Set([...prev, job.id]))
+      }
+    } catch (e: any) { console.error("toggleSave exception:", e.message) }
     setSavingId(null)
   }
 
@@ -152,13 +176,21 @@ export default function JobsPage() {
 
   async function applyAndTrack(job: Job) {
     window.open(job.source_url, "_blank")
+    if (!userId) return
     const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    await supabase.from("applications").upsert({
-      user_id: user.id, job_id: job.id, job_data: job,
-      status: "applied", applied_at: new Date().toISOString()
+    const { error } = await supabase.from("applications").upsert({
+      user_id: userId,
+      job_id: job.id,
+      job_data: job,
+      status: "applied",
+      applied_at: new Date().toISOString()
     }, { onConflict: "user_id,job_id" })
+    if (!error) {
+      // Remove from jobs list immediately
+      setAllJobs(prev => prev.filter(j => j.id !== job.id))
+      setMessage(`✓ "${job.title}" moved to Applications tracker`)
+      setTimeout(() => setMessage(""), 3000)
+    }
   }
 
   const filteredJobs = allJobs.filter(j => {
@@ -195,13 +227,24 @@ export default function JobsPage() {
     fontSize: "13px", fontWeight: "600" as const, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1
   })
 
+  const sourceColor: Record<string, {color: string, bg: string}> = {
+    linkedin:    { color: "#60a5fa", bg: "rgba(96,165,250,0.1)" },
+    indeed:      { color: "#fbbf24", bg: "rgba(251,191,36,0.1)" },
+    glassdoor:   { color: "#4ade80", bg: "rgba(74,222,128,0.1)" },
+    remotive:    { color: "#f472b6", bg: "rgba(244,114,182,0.1)" },
+    adzuna:      { color: "#fb923c", bg: "rgba(251,146,60,0.1)" },
+    dice:        { color: "#a78bfa", bg: "rgba(167,139,250,0.1)" },
+    ziprecruiter:{ color: "#34d399", bg: "rgba(52,211,153,0.1)" },
+    other:       { color: "#94a3b8", bg: "rgba(148,163,184,0.1)" },
+  }
+
   return (
     <div style={{ minHeight: "100vh", background: "hsl(224 71% 4%)", padding: "32px" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px", flexWrap: "wrap" as const, gap: "12px" }}>
         <div>
           <h1 style={{ fontSize: "28px", fontWeight: "700", color: "hsl(213 31% 91%)", margin: "0 0 4px" }}>Browse Jobs</h1>
           <p style={{ color: "hsl(215 20% 65%)", fontSize: "13px", margin: "0" }}>
-            {filteredJobs.length} jobs found
+            {filteredJobs.length} active jobs
             {filteredJobs.length !== allJobs.length && <span style={{ color: "hsl(215 20% 45%)" }}> (filtered from {allJobs.length})</span>}
             {savedIds.size > 0 && <span style={{ marginLeft: "10px", color: "#a78bfa" }}>· {savedIds.size} saved</span>}
           </p>
@@ -210,16 +253,16 @@ export default function JobsPage() {
           <input value={fetchQuery} onChange={e => setFetchQuery(e.target.value)}
             onKeyDown={e => e.key === "Enter" && fetchFreshJobs()}
             placeholder="e.g. data engineer"
-            style={{ background: "hsl(224 71% 8%)", border: "1px solid hsl(216 34% 17%)", borderRadius: "10px", padding: "10px 14px", color: "hsl(213 31% 91%)", fontSize: "14px", outline: "none", width: "200px" }} />
+            style={{ background: "hsl(224 71% 8%)", border: "1px solid hsl(216 34% 17%)", borderRadius: "10px", padding: "10px 14px", color: "hsl(213 31% 91%)", fontSize: "14px", outline: "none", width: "180px" }} />
           <button onClick={fetchFreshJobs} disabled={fetching}
             style={{ background: "#7c3aed", color: "white", padding: "10px 20px", borderRadius: "10px", fontSize: "14px", fontWeight: "600", border: "none", cursor: "pointer", opacity: fetching ? 0.7 : 1, whiteSpace: "nowrap" as const }}>
             {fetching ? "Fetching..." : "Fetch Jobs"}
           </button>
           <button onClick={scoreJobs} disabled={scoring || allJobs.length === 0}
             style={{ background: "linear-gradient(135deg, #7c3aed, #a855f7)", color: "white", padding: "10px 20px", borderRadius: "10px", fontSize: "14px", fontWeight: "600", border: "none", cursor: "pointer", opacity: scoring ? 0.7 : 1, whiteSpace: "nowrap" as const }}>
-            {scoring ? "Scoring..." : "✨ AI Match Score"}
+            {scoring ? "Scoring..." : "✨ AI Match"}
           </button>
-          <button onClick={loadJobs}
+          <button onClick={() => loadJobs()}
             style={{ background: "hsl(224 71% 8%)", color: "hsl(213 31% 91%)", padding: "10px 16px", borderRadius: "10px", fontSize: "14px", border: "1px solid hsl(216 34% 17%)", cursor: "pointer" }}>
             Refresh
           </button>
@@ -234,22 +277,22 @@ export default function JobsPage() {
         />
         <select value={sortBy} onChange={e => setSortBy(e.target.value)}
           style={{ background: "hsl(224 71% 8%)", border: "1px solid hsl(216 34% 17%)", borderRadius: "10px", padding: "10px 14px", color: "hsl(213 31% 91%)", fontSize: "14px", outline: "none", cursor: "pointer" }}>
-          <option value="newest">Sort: Newest first</option>
-          <option value="oldest">Sort: Oldest first</option>
-          <option value="match">Sort: AI Match Score</option>
-          <option value="company">Sort: Company A-Z</option>
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="match">AI Match Score</option>
+          <option value="company">Company A-Z</option>
         </select>
       </div>
 
       <div style={{ display: "flex", gap: "8px", marginBottom: "20px", flexWrap: "wrap" as const, alignItems: "center" }}>
-        <span style={{ fontSize: "12px", color: "hsl(215 20% 45%)", marginRight: "4px" }}>Mode:</span>
+        <span style={{ fontSize: "12px", color: "hsl(215 20% 45%)" }}>Mode:</span>
         {["all", "remote", "hybrid", "onsite"].map(v => (
           <button key={v} style={filterBtn(workModeFilter === v)} onClick={() => setWorkModeFilter(v)}>
             {v === "all" ? "All" : v}
           </button>
         ))}
         <div style={{ width: "1px", background: "hsl(216 34% 17%)", margin: "0 8px", height: "20px" }} />
-        <span style={{ fontSize: "12px", color: "hsl(215 20% 45%)", marginRight: "4px" }}>Type:</span>
+        <span style={{ fontSize: "12px", color: "hsl(215 20% 45%)" }}>Type:</span>
         {["all", "full_time", "contract", "part_time"].map(v => (
           <button key={v} style={filterBtn(typeFilter === v)} onClick={() => setTypeFilter(v)}>
             {v === "all" ? "All" : v.replace("_", " ")}
@@ -258,7 +301,7 @@ export default function JobsPage() {
       </div>
 
       {message && (
-        <div style={{ padding: "12px 16px", background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.3)", borderRadius: "8px", color: "#4ade80", fontSize: "13px", marginBottom: "20px" }}>
+        <div style={{ padding: "12px 16px", background: message.startsWith("Error") ? "rgba(239,68,68,0.1)" : "rgba(34,197,94,0.1)", border: `1px solid ${message.startsWith("Error") ? "rgba(239,68,68,0.3)" : "rgba(34,197,94,0.3)"}`, borderRadius: "8px", color: message.startsWith("Error") ? "#f87171" : "#4ade80", fontSize: "13px", marginBottom: "20px" }}>
           {message}
         </div>
       )}
@@ -268,7 +311,7 @@ export default function JobsPage() {
       ) : paginatedJobs.length === 0 ? (
         <div style={{ textAlign: "center", padding: "48px", color: "hsl(215 20% 45%)" }}>
           <p style={{ fontSize: "16px", marginBottom: "8px" }}>No jobs found</p>
-          <p style={{ fontSize: "13px", marginBottom: "16px" }}>Try changing your filters or fetch new jobs</p>
+          <p style={{ fontSize: "13px", marginBottom: "16px" }}>Click Fetch Jobs to load fresh listings</p>
           <button onClick={fetchFreshJobs} disabled={fetching}
             style={{ background: "#7c3aed", color: "white", padding: "12px 24px", borderRadius: "10px", fontSize: "14px", fontWeight: "600", border: "none", cursor: "pointer" }}>
             Fetch Jobs
@@ -281,8 +324,9 @@ export default function JobsPage() {
               const mc = matchColor(job.ai_match_score)
               const saved = savedIds.has(job.id)
               const isSaving = savingId === job.id
+              const sc = sourceColor[job.source] || sourceColor.other
               return (
-                <div key={job.id} style={{ background: "hsl(224 71% 6%)", border: `1px solid ${isFresh(job.posted_at) ? "rgba(34,197,94,0.3)" : "hsl(216 34% 17%)"}`, borderRadius: "12px", padding: "20px", position: "relative" as const }}>
+                <div key={job.id} style={{ background: "hsl(224 71% 6%)", border: `1px solid ${isFresh(job.posted_at) ? "rgba(34,197,94,0.3)" : "hsl(216 34% 17%)"}`, borderRadius: "12px", padding: "20px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px" }}>
                     <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" as const }}>
                       {isFresh(job.posted_at) && (
@@ -294,18 +338,9 @@ export default function JobsPage() {
                         </span>
                       )}
                     </div>
-                    {/* Save button - clear bookmark icon */}
-                    <button
-                      onClick={() => toggleSave(job)}
-                      disabled={isSaving}
+                    <button onClick={() => toggleSave(job)} disabled={isSaving}
                       title={saved ? "Remove from saved" : "Save job"}
-                      style={{
-                        background: saved ? "rgba(124,58,237,0.2)" : "transparent",
-                        border: saved ? "1px solid rgba(124,58,237,0.4)" : "1px solid hsl(216 34% 25%)",
-                        borderRadius: "8px", padding: "5px 10px", cursor: isSaving ? "wait" : "pointer",
-                        fontSize: "13px", color: saved ? "#a78bfa" : "hsl(215 20% 55%)",
-                        fontWeight: "600" as const, opacity: isSaving ? 0.5 : 1
-                      }}>
+                      style={{ background: saved ? "rgba(124,58,237,0.2)" : "transparent", border: saved ? "1px solid rgba(124,58,237,0.4)" : "1px solid hsl(216 34% 25%)", borderRadius: "8px", padding: "5px 10px", cursor: isSaving ? "wait" : "pointer", fontSize: "12px", color: saved ? "#a78bfa" : "hsl(215 20% 55%)", fontWeight: "600" as const }}>
                       {isSaving ? "..." : saved ? "★ Saved" : "☆ Save"}
                     </button>
                   </div>
@@ -321,14 +356,14 @@ export default function JobsPage() {
                     </div>
                   </div>
 
-                  <div style={{ marginBottom: "10px" }}>
+                  <div style={{ marginBottom: "12px" }}>
                     <span style={badge(job.work_mode, job.work_mode === "remote" ? "#4ade80" : "#a78bfa", job.work_mode === "remote" ? "rgba(74,222,128,0.1)" : "rgba(124,110,245,0.15)")}>{job.work_mode}</span>
-                    <span style={badge(job.job_type, "#a78bfa", "rgba(124,110,245,0.15)")}>{job.job_type}</span>
-                    <span style={badge(job.source, "#60a5fa", "rgba(96,165,250,0.1)")}>{job.source}</span>
+                    <span style={badge(job.job_type, "#a78bfa", "rgba(124,110,245,0.15)")}>{job.job_type?.replace("_", " ")}</span>
+                    <span style={badge(job.source, sc.color, sc.bg)}>{job.source}</span>
                     {job.salary_min && <span style={badge(`$${Math.round(job.salary_min / 1000)}k+`, "#fbbf24", "rgba(251,191,36,0.1)")}>${Math.round(job.salary_min / 1000)}k+</span>}
                   </div>
 
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "14px", gap: "8px" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
                     <span style={{ fontSize: "12px", color: "hsl(215 20% 45%)" }}>🕐 {timeAgo(job.posted_at)}</span>
                     <div style={{ display: "flex", gap: "6px" }}>
                       <button onClick={() => sendToResume(job)}
@@ -359,14 +394,12 @@ export default function JobsPage() {
                 }, [])
                 .map((p, i) => (
                   <button key={i} onClick={() => typeof p === "number" && setCurrentPage(p)} disabled={p === "..."}
-                    style={pageBtn(p === currentPage, p === "...")}>
-                    {p}
-                  </button>
+                    style={pageBtn(p === currentPage, p === "...")}>{p}</button>
                 ))}
               <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} style={pageBtn(false, currentPage === totalPages)}>Next ›</button>
               <button onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages} style={pageBtn(false, currentPage === totalPages)}>»</button>
               <span style={{ fontSize: "13px", color: "hsl(215 20% 45%)", marginLeft: "8px" }}>
-                Page {currentPage} of {totalPages} · {filteredJobs.length} jobs
+                Page {currentPage} of {totalPages}
               </span>
             </div>
           )}

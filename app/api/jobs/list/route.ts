@@ -6,13 +6,13 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const search = searchParams.get("search") || ""
     const source = searchParams.get("source") || ""
+    const userId = searchParams.get("userId") || ""
 
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SECRET_KEY!
     )
 
-    // Show jobs from last 7 days
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
 
     let query = supabase
@@ -28,7 +28,19 @@ export async function GET(request: Request) {
     const { data, error } = await query
     if (error) throw error
 
-    return NextResponse.json({ jobs: data || [] })
+    let jobs = data || []
+
+    // Hide jobs user has already applied to
+    if (userId) {
+      const { data: applied } = await supabase
+        .from("applications")
+        .select("job_id")
+        .eq("user_id", userId)
+      const appliedIds = new Set((applied || []).map((a: any) => a.job_id))
+      jobs = jobs.filter((j: any) => !appliedIds.has(j.id))
+    }
+
+    return NextResponse.json({ jobs })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
