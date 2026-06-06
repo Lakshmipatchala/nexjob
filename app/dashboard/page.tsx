@@ -6,6 +6,7 @@ const features = [
   { href: "/dashboard/cover-letter", emoji: "✉️", title: "Cover Letter", desc: "AI-generated cover letters with perfect tone and length" },
   { href: "/dashboard/applications", emoji: "📋", title: "Applications", desc: "Track Applied → Screening → Interview → Offer → Rejected" },
   { href: "/dashboard/saved", emoji: "🔖", title: "Saved Jobs", desc: "All your bookmarked positions in one place" },
+  { href: "/dashboard/chat", emoji: "💬", title: "AI Career Coach", desc: "Chat with Claude about resume, interviews, salary and career advice" },
   { href: "/dashboard/profile", emoji: "⚙️", title: "Profile & Settings", desc: "Personal info, AI preferences, and password management" },
 ]
 
