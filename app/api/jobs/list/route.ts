@@ -5,7 +5,6 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
     const search = searchParams.get("search") || ""
-    const source = searchParams.get("source") || ""
     const userId = searchParams.get("userId") || ""
     const query = searchParams.get("query") || ""
 
@@ -23,24 +22,26 @@ export async function GET(request: Request) {
       .order("posted_at", { ascending: false })
       .limit(500)
 
-    // Filter by fetch query (what user searched when clicking Fetch Jobs)
-    if (query) {
-      dbQuery = dbQuery.ilike("title", `%${query}%`)
+    // Filter by fetch query - this is the KEY fix
+    if (query && query.trim() !== "") {
+      const words = query.trim().split(" ").filter(w => w.length > 2)
+      if (words.length > 0) {
+        const orFilter = words.map(w => `title.ilike.%${w}%`).join(",")
+        dbQuery = dbQuery.or(orFilter)
+      }
     }
 
-    // Filter by title search bar
-    if (search) {
+    // Additional title filter from search bar
+    if (search && search.trim() !== "") {
       dbQuery = dbQuery.ilike("title", `%${search}%`)
     }
-
-    if (source) dbQuery = dbQuery.eq("source", source)
 
     const { data, error } = await dbQuery
     if (error) throw error
 
     let jobs = data || []
 
-    // Hide jobs user already applied to
+    // Hide applied jobs
     if (userId) {
       const { data: applied } = await supabase
         .from("applications")
