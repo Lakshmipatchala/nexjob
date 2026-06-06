@@ -22,10 +22,12 @@ export async function GET(request: Request) {
       .order("posted_at", { ascending: false })
       .limit(500)
 
+    // Filter by job title query
     if (query && query.trim()) {
       dbQuery = dbQuery.ilike("title", `%${query.trim()}%`)
     }
 
+    // Additional filter bar search
     if (search && search.trim()) {
       dbQuery = dbQuery.ilike("title", `%${search.trim()}%`)
     }
@@ -35,6 +37,7 @@ export async function GET(request: Request) {
 
     let jobs = data || []
 
+    // Hide applied jobs
     if (userId) {
       const { data: applied } = await supabase
         .from("applications")

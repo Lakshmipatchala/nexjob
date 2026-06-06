@@ -74,9 +74,9 @@ export default function JobsPage() {
     if (user) {
       setUserId(user.id)
       loadSavedViaAPI(user.id)
-      loadJobs(user.id, "")
+      loadJobs(user.id, lastJobSearch || "")
     } else {
-      loadJobs("", "")
+      loadJobs("", lastJobSearch || "")
     }
   }
 
