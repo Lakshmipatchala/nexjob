@@ -29,12 +29,16 @@ export default function Sidebar() {
     supabase.auth.getUser().then(async ({ data }) => {
       if (data.user) {
         setUser(data.user)
-        const { data: prof } = await supabase
-          .from("profiles")
-          .select("first_name, last_name, desired_title")
-          .eq("id", data.user.id)
-          .single()
-        setProfile(prof)
+        // Try profile with retries
+        for (let i = 0; i < 3; i++) {
+          const { data: prof } = await supabase
+            .from("profiles")
+            .select("first_name, last_name, desired_title")
+            .eq("id", data.user.id)
+            .single()
+          if (prof) { setProfile(prof); break }
+          await new Promise(r => setTimeout(r, 500))
+        }
       }
     })
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
