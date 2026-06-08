@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { href: "/dashboard/cover-letter", icon: "✉️", label: "Cover Letter" },
   { href: "/dashboard/chat", icon: "💬", label: "AI Coach" },
   { href: "/dashboard/applications", icon: "📋", label: "Applications" },
+  { href: "/dashboard/apply", icon: "⚡", label: "1-Click Apply" },
   { href: "/dashboard/saved", icon: "🔖", label: "Saved Jobs" },
   { href: "/dashboard/profile", icon: "⚙️", label: "Settings" },
 ]
