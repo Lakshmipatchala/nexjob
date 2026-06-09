@@ -16,6 +16,17 @@ import {
   fetchWellfound,
   fetchDice,
   fetchUSAJobs,
+  fetchAshby,
+  fetchWorkable,
+  fetchSmartRecruiters,
+  fetchBambooHR,
+  fetchJobvite,
+  fetchBayt,
+  fetchGulfTalent,
+  fetchNaukri,
+  fetchShine,
+  fetchEURES,
+  fetchJobsDB,
 } from "@/lib/job-sources"
 
 // Countries covered across all sources
@@ -23,9 +34,9 @@ const GLOBAL_COUNTRIES = [
   // Core English-speaking
   "US", "CA", "GB", "AU", "IE",
   // Asia-Pacific
-  "IN", "SG", "JP", "KR",
+  "IN", "SG", "JP", "KR", "HK", "TH", "ID", "PH", "MY",
   // Middle East
-  "AE", "KW", "SA", "QA", "BH", "OM",
+  "AE", "KW", "SA", "QA", "BH", "OM", "EG", "JO",
   // Western Europe
   "DE", "FR", "NL", "SE", "NO", "DK", "FI", "CH", "AT", "BE", "PT", "ES", "IT",
   // Eastern Europe
@@ -415,6 +426,19 @@ export async function GET(request: Request) {
       fetchWellfound(ctx),
       fetchDice(ctx),
       fetchUSAJobs(ctx),
+      // Phase 2 — ATS platforms
+      fetchAshby(ctx),
+      fetchWorkable(ctx),
+      fetchSmartRecruiters(ctx),
+      fetchBambooHR(ctx),
+      fetchJobvite(ctx),
+      // Phase 3 — Regional boards
+      fetchBayt(ctx),
+      fetchGulfTalent(ctx),
+      fetchNaukri(ctx),
+      fetchShine(ctx),
+      fetchEURES(ctx),
+      fetchJobsDB(ctx),
     ])
 
     const raw: NormalizedJob[] = []
