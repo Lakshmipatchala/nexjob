@@ -27,6 +27,12 @@ import {
   fetchShine,
   fetchEURES,
   fetchJobsDB,
+  fetchYCJobs,
+  fetchContra,
+  fetchArbeitnow,
+  fetchFindWork,
+  fetchGuru,
+  fetchAuthenticJobs,
 } from "@/lib/job-sources"
 
 // Countries covered across all sources
@@ -447,6 +453,13 @@ export async function GET(request: Request) {
       fetchShine(ctx),
       fetchEURES(ctx),
       fetchJobsDB(ctx),
+      // Phase 5 — Freelance & niche boards
+      fetchYCJobs(ctx),
+      fetchContra(ctx),
+      fetchArbeitnow(ctx),
+      fetchFindWork(ctx),
+      fetchGuru(ctx),
+      fetchAuthenticJobs(ctx),
     ])
 
     const raw: NormalizedJob[] = []
