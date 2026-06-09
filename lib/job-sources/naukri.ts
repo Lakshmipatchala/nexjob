@@ -52,9 +52,7 @@ export async function fetchNaukri(ctx: FetchContext): Promise<NormalizedJob[]> {
           source_url: j.jdURL ? `https://www.naukri.com${j.jdURL}` : "",
           description: cleanHtml(j.jobDescription || j.jobDescription || ""),
           external_id: `naukri_${j.jobId}`,
-          posted_at: j.footerPlaceholderLabel
-            ? ctx.now
-            : ctx.now,
+          posted_at: ctx.now,
           is_active: true,
           expires_at: ctx.expires,
         })

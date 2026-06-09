@@ -1,5 +1,11 @@
 import { NormalizedJob, FetchContext, cleanHtml, detectWorkMode, detectJobType, keywordMatch } from "./types"
 
+function strHash(s: string): string {
+  let h = 0
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0
+  return Math.abs(h).toString(36)
+}
+
 // Authentic Jobs — design, dev, and creative roles, public RSS feed
 export async function fetchAuthenticJobs(ctx: FetchContext): Promise<NormalizedJob[]> {
   const raw: NormalizedJob[] = []
@@ -48,7 +54,7 @@ export async function fetchAuthenticJobs(ctx: FetchContext): Promise<NormalizedJ
         source: "authenticjobs",
         source_url: link,
         description: cleanHtml(desc),
-        external_id: `authenticjobs_${Buffer.from(guid).toString("base64").slice(0, 32)}`,
+        external_id: `authenticjobs_${strHash(guid)}`,
         posted_at: pubDate ? new Date(pubDate).toISOString() : ctx.now,
         is_active: true,
         expires_at: ctx.expires,

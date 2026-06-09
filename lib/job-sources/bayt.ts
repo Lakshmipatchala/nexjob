@@ -1,5 +1,11 @@
 import { NormalizedJob, FetchContext, cleanHtml, detectWorkMode, detectJobType, keywordMatch } from "./types"
 
+function strHash(s: string): string {
+  let h = 0
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0
+  return Math.abs(h).toString(36)
+}
+
 // Bayt.com — largest job board in Middle East, public RSS feeds
 const BAYT_COUNTRIES = [
   { code: "ae", name: "UAE" },
@@ -59,7 +65,7 @@ export async function fetchBayt(ctx: FetchContext): Promise<NormalizedJob[]> {
           source: "bayt",
           source_url: link,
           description: cleanHtml(desc),
-          external_id: `bayt_${Buffer.from(guid).toString("base64").slice(0, 32)}`,
+          external_id: `bayt_${strHash(guid)}`,
           posted_at: pubDate ? new Date(pubDate).toISOString() : ctx.now,
           is_active: true,
           expires_at: ctx.expires,
