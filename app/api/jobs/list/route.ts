@@ -4,7 +4,6 @@ import { createClient } from "@supabase/supabase-js"
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
-    const search = searchParams.get("search") || ""
     const userId = searchParams.get("userId") || ""
     const query = searchParams.get("query") || ""
 
@@ -13,23 +12,14 @@ export async function GET(request: Request) {
       process.env.SUPABASE_SECRET_KEY!
     )
 
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-
     let dbQuery = supabase
       .from("jobs")
       .select("*")
-      .gte("posted_at", sevenDaysAgo)
       .order("posted_at", { ascending: false })
       .limit(500)
 
-    // Filter by job title query
     if (query && query.trim()) {
       dbQuery = dbQuery.ilike("title", `%${query.trim()}%`)
-    }
-
-    // Additional filter bar search
-    if (search && search.trim()) {
-      dbQuery = dbQuery.ilike("title", `%${search.trim()}%`)
     }
 
     const { data, error } = await dbQuery
@@ -37,8 +27,7 @@ export async function GET(request: Request) {
 
     let jobs = data || []
 
-    // Hide applied jobs
-    if (userId) {
+    if (userId && jobs.length > 0) {
       const { data: applied } = await supabase
         .from("applications")
         .select("job_id")
@@ -47,7 +36,7 @@ export async function GET(request: Request) {
       jobs = jobs.filter((j: any) => !appliedIds.has(j.id))
     }
 
-    return NextResponse.json({ jobs })
+    return NextResponse.json({ jobs, total: jobs.length })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
