@@ -1,80 +1,53 @@
-﻿import { NextResponse } from "next/server"
+import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import {
+  NormalizedJob,
+  FetchContext,
+  cleanHtml,
+  detectWorkMode,
+  detectJobType,
+  keywordMatch,
+  COUNTRY_NAMES,
+  ADZUNA_COUNTRY_MAP,
+  fetchJooble,
+  fetchRemoteOK,
+  fetchWeWorkRemotely,
+  fetchHimalayas,
+  fetchWellfound,
+  fetchDice,
+  fetchUSAJobs,
+} from "@/lib/job-sources"
 
-type Job = {
-  title: string
-  company: string
-  company_logo: string | null
-  location: string
-  work_mode: "remote" | "hybrid" | "onsite"
-  job_type: "full_time" | "part_time" | "contract"
-  salary_min: number | null
-  salary_max: number | null
-  source: string
-  source_url: string
-  description: string
-  external_id: string
-  posted_at: string
-  is_active: boolean
-  expires_at: string
-}
+// Countries covered across all sources
+const GLOBAL_COUNTRIES = [
+  // Core English-speaking
+  "US", "CA", "GB", "AU", "IE",
+  // Asia-Pacific
+  "IN", "SG", "JP", "KR",
+  // Middle East
+  "AE", "KW", "SA", "QA", "BH", "OM",
+  // Western Europe
+  "DE", "FR", "NL", "SE", "NO", "DK", "FI", "CH", "AT", "BE", "PT", "ES", "IT",
+  // Eastern Europe
+  "PL", "CZ", "RO", "HU",
+  // Americas
+  "BR", "MX",
+  // Africa
+  "ZA", "NG",
+]
 
-const GLOBAL_COUNTRIES = ["US", "CA", "GB", "IN", "AU", "DE", "SG", "AE", "NL", "FR"]
+// ── Existing source fetchers (kept inline, use shared helpers) ─────────────
 
-const countryNames: Record<string, string> = {
-  US: "United States",
-  IN: "India",
-  GB: "United Kingdom",
-  CA: "Canada",
-  AU: "Australia",
-  DE: "Germany",
-  SG: "Singapore",
-  AE: "UAE",
-  NL: "Netherlands",
-  FR: "France",
-  GLOBAL: "Worldwide",
-  REMOTE: "Remote",
-}
-
-function cleanHtml(value?: string) {
-  return (value || "")
-    .replace(/<[^>]*>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 5000)
-}
-
-function detectWorkMode(title = "", location = "", description = ""): "remote" | "hybrid" | "onsite" {
-  const text = `${title} ${location} ${description}`.toLowerCase()
-  if (text.includes("remote")) return "remote"
-  if (text.includes("hybrid")) return "hybrid"
-  return "onsite"
-}
-
-function detectJobType(value = ""): "full_time" | "part_time" | "contract" {
-  const text = value.toLowerCase()
-  if (text.includes("part")) return "part_time"
-  if (text.includes("contract") || text.includes("temporary") || text.includes("corp")) return "contract"
-  return "full_time"
-}
-
-function keywordMatch(job: any, query: string) {
-  const q = query.toLowerCase().trim()
-  const text = `${job.title || ""} ${job.jobTitle || ""} ${job.text || ""} ${job.description || ""} ${job.content || ""} ${job.descriptionPlain || ""}`.toLowerCase()
-
-  return q
-    .split(/\s+/)
-    .filter(Boolean)
-    .some(word => text.includes(word))
-}
-
-async function fetchJSearch(query: string, countries: string[], now: string, expires: string) {
-  const raw: Job[] = []
+async function fetchJSearch(query: string, countries: string[], now: string, expires: string): Promise<NormalizedJob[]> {
+  const raw: NormalizedJob[] = []
   if (!process.env.RAPIDAPI_KEY) return raw
 
+  // JSearch supports these country codes
+  const supported = new Set(["us","ca","gb","in","au","de","sg","ae","nl","fr","it","es","pl","se","no","dk","fi","ch","at","be","pt","ie","br","mx","za","jp","kr","sa","qa","bh","om","kw"])
+
   for (const c of countries) {
-    const countryName = countryNames[c] || c
     const jsearchCountry = c.toLowerCase()
+    if (!supported.has(jsearchCountry)) continue
 
     for (let page = 1; page <= 3; page++) {
       try {
@@ -89,10 +62,7 @@ async function fetchJSearch(query: string, countries: string[], now: string, exp
           cache: "no-store",
         })
 
-        if (!res.ok) {
-          console.error("JSearch HTTP error:", res.status, await res.text())
-          break
-        }
+        if (!res.ok) break
 
         const data = await res.json()
         const jobs = data.data || []
@@ -102,10 +72,10 @@ async function fetchJSearch(query: string, countries: string[], now: string, exp
           if (!j.job_title) continue
 
           const loc = j.job_city
-            ? `${j.job_city}, ${j.job_state || j.job_country || countryName}`
+            ? `${j.job_city}, ${j.job_state || j.job_country || COUNTRY_NAMES[c] || c}`
             : j.job_is_remote
               ? "Remote"
-              : countryName
+              : COUNTRY_NAMES[c] || c
 
           raw.push({
             title: j.job_title,
@@ -116,21 +86,7 @@ async function fetchJSearch(query: string, countries: string[], now: string, exp
             job_type: detectJobType(j.job_employment_type || ""),
             salary_min: j.job_min_salary || null,
             salary_max: j.job_max_salary || null,
-            source: j.job_publisher?.toLowerCase().includes("linkedin")
-              ? "linkedin"
-              : j.job_publisher?.toLowerCase().includes("indeed")
-                ? "indeed"
-                : j.job_publisher?.toLowerCase().includes("glassdoor")
-                  ? "glassdoor"
-                  : j.job_publisher?.toLowerCase().includes("dice")
-                    ? "dice"
-                    : j.job_publisher?.toLowerCase().includes("monster")
-                      ? "monster"
-                      : j.job_publisher?.toLowerCase().includes("zip")
-                        ? "ziprecruiter"
-                        : j.job_publisher?.toLowerCase().includes("naukri")
-                          ? "naukri"
-                          : "jsearch",
+            source: normalizeJSearchPublisher(j.job_publisher),
             source_url: j.job_apply_link || "",
             description: cleanHtml(j.job_description),
             external_id: `jsearch_${j.job_id}`,
@@ -140,7 +96,7 @@ async function fetchJSearch(query: string, countries: string[], now: string, exp
           })
         }
       } catch (e) {
-        console.error("JSearch error:", e)
+        console.error("JSearch error:", c, e)
       }
     }
   }
@@ -148,15 +104,29 @@ async function fetchJSearch(query: string, countries: string[], now: string, exp
   return raw
 }
 
-async function fetchRemotive(query: string, now: string, expires: string) {
-  const raw: Job[] = []
+function normalizeJSearchPublisher(pub?: string): string {
+  if (!pub) return "jsearch"
+  const p = pub.toLowerCase()
+  if (p.includes("linkedin")) return "linkedin"
+  if (p.includes("indeed")) return "indeed"
+  if (p.includes("glassdoor")) return "glassdoor"
+  if (p.includes("dice")) return "dice"
+  if (p.includes("monster")) return "monster"
+  if (p.includes("zip")) return "ziprecruiter"
+  if (p.includes("naukri")) return "naukri"
+  if (p.includes("bayt")) return "bayt"
+  if (p.includes("gulf")) return "gulfjobs"
+  return "jsearch"
+}
+
+async function fetchRemotive(query: string, now: string, expires: string): Promise<NormalizedJob[]> {
+  const raw: NormalizedJob[] = []
 
   try {
     const res = await fetch(
       `https://remotive.com/api/remote-jobs?search=${encodeURIComponent(query)}&limit=100`,
       { cache: "no-store" }
     )
-
     if (!res.ok) return raw
 
     const data = await res.json()
@@ -189,17 +159,15 @@ async function fetchRemotive(query: string, now: string, expires: string) {
   return raw
 }
 
-async function fetchJobicy(query: string, now: string, expires: string) {
-  const raw: Job[] = []
+async function fetchJobicy(query: string, now: string, expires: string): Promise<NormalizedJob[]> {
+  const raw: NormalizedJob[] = []
 
   try {
     const tag = query.split(" ")[0].toLowerCase()
-
     const res = await fetch(
       `https://jobicy.com/api/v2/remote-jobs?count=100&tag=${encodeURIComponent(tag)}`,
       { cache: "no-store" }
     )
-
     if (!res.ok) return raw
 
     const data = await res.json()
@@ -232,26 +200,12 @@ async function fetchJobicy(query: string, now: string, expires: string) {
   return raw
 }
 
-async function fetchAdzuna(query: string, countries: string[], now: string, expires: string) {
-  const raw: Job[] = []
-
+async function fetchAdzuna(query: string, countries: string[], now: string, expires: string): Promise<NormalizedJob[]> {
+  const raw: NormalizedJob[] = []
   if (!process.env.ADZUNA_APP_ID || !process.env.ADZUNA_APP_KEY) return raw
 
-  const map: Record<string, string> = {
-    US: "us",
-    IN: "in",
-    GB: "gb",
-    CA: "ca",
-    AU: "au",
-    DE: "de",
-    SG: "sg",
-    AE: "ae",
-    NL: "nl",
-    FR: "fr",
-  }
-
   for (const c of countries) {
-    const ac = map[c]
+    const ac = ADZUNA_COUNTRY_MAP[c]
     if (!ac) continue
 
     for (let page = 1; page <= 3; page++) {
@@ -273,7 +227,7 @@ async function fetchAdzuna(query: string, countries: string[], now: string, expi
         for (const j of jobs) {
           if (!j.title) continue
 
-          const loc = j.location?.display_name || countryNames[c] || c
+          const loc = j.location?.display_name || COUNTRY_NAMES[c] || c
 
           raw.push({
             title: j.title,
@@ -294,7 +248,7 @@ async function fetchAdzuna(query: string, countries: string[], now: string, expi
           })
         }
       } catch (e) {
-        console.error("Adzuna error:", e)
+        console.error("Adzuna error:", c, e)
       }
     }
   }
@@ -302,14 +256,20 @@ async function fetchAdzuna(query: string, countries: string[], now: string, expi
   return raw
 }
 
-async function fetchGreenhouse(query: string, now: string, expires: string) {
-  const raw: Job[] = []
+async function fetchGreenhouse(query: string, now: string, expires: string): Promise<NormalizedJob[]> {
+  const raw: NormalizedJob[] = []
 
   const companies = [
     "stripe", "anthropic", "databricks", "snowflake", "confluent", "mongodb",
     "elastic", "cloudflare", "datadog", "github", "gitlab", "twilio",
     "figma", "notion", "vercel", "brex", "plaid", "rippling", "airtable",
     "canva", "miro", "deel", "hashicorp", "coinbase", "robinhood", "gusto",
+    // Added in Phase 1
+    "openai", "mistral", "huggingface", "cohere", "scale-ai", "weights-biases",
+    "linear", "loom", "retool", "render", "fly", "supabase", "neon",
+    "dbt-labs", "airbyte", "fivetran", "segment", "amplitude", "mixpanel",
+    "intercom", "zendesk", "freshworks", "hubspot", "lattice", "culture-amp",
+    "remote", "deel", "papaya-global", "oyster-hr",
   ]
 
   for (const company of companies) {
@@ -318,13 +278,12 @@ async function fetchGreenhouse(query: string, now: string, expires: string) {
         `https://boards-api.greenhouse.io/v1/boards/${company}/jobs?content=true`,
         { cache: "no-store" }
       )
-
       if (!res.ok) continue
 
       const data = await res.json()
 
       for (const j of data.jobs || []) {
-        if (!j.title || !keywordMatch(j, query)) continue
+        if (!j.title || !keywordMatch(`${j.title} ${j.content || ""}`, query)) continue
 
         const loc = j.location?.name || "Remote / Worldwide"
 
@@ -354,13 +313,21 @@ async function fetchGreenhouse(query: string, now: string, expires: string) {
   return raw
 }
 
-async function fetchLever(query: string, now: string, expires: string) {
-  const raw: Job[] = []
+async function fetchLever(query: string, now: string, expires: string): Promise<NormalizedJob[]> {
+  const raw: NormalizedJob[] = []
 
   const companies = [
     "netflix", "uber", "lyft", "reddit", "duolingo", "carta", "rippling",
     "clickup", "miro", "loom", "benchling", "scale", "deel", "coinbase",
     "chime", "gusto", "greenhouse", "brex", "intercom",
+    // Added in Phase 1
+    "figma", "notion", "airtable", "coda", "craft", "linear",
+    "replit", "sourcegraph", "vercel", "netlify", "fly-io",
+    "stripe", "plaid", "checkout", "adyen", "marqeta",
+    "palantir", "anduril", "shield-ai", "scale-ai",
+    "ramp", "brex", "mercury", "modern-treasury",
+    "hinge", "bumble", "match", "bereal",
+    "calm", "headspace", "noom", "tempus",
   ]
 
   for (const company of companies) {
@@ -369,13 +336,12 @@ async function fetchLever(query: string, now: string, expires: string) {
         `https://api.lever.co/v0/postings/${company}?mode=json`,
         { cache: "no-store" }
       )
-
       if (!res.ok) continue
 
       const jobs = await res.json()
 
       for (const j of Array.isArray(jobs) ? jobs : []) {
-        if (!j.text || !keywordMatch(j, query)) continue
+        if (!j.text || !keywordMatch(`${j.text} ${j.descriptionPlain || ""}`, query)) continue
 
         const loc = j.categories?.location || "Remote / Worldwide"
 
@@ -405,6 +371,8 @@ async function fetchLever(query: string, now: string, expires: string) {
   return raw
 }
 
+// ── Main route handler ──────────────────────────────────────────────────────
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
@@ -424,47 +392,59 @@ export async function GET(request: Request) {
       process.env.SUPABASE_SECRET_KEY!
     )
 
-    const raw: Job[] = []
     const expires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
     const now = new Date().toISOString()
 
+    const ctx: FetchContext = { query, countries, now, expires }
+
+    // Run all sources in parallel — failures are isolated
     const results = await Promise.allSettled([
+      // Existing aggregators
       fetchJSearch(query, countries, now, expires),
       fetchAdzuna(query, countries, now, expires),
       fetchRemotive(query, now, expires),
       fetchJobicy(query, now, expires),
+      // Existing ATS scrapers
       fetchGreenhouse(query, now, expires),
       fetchLever(query, now, expires),
+      // Phase 1 — New sources
+      fetchJooble(ctx),
+      fetchRemoteOK(ctx),
+      fetchWeWorkRemotely(ctx),
+      fetchHimalayas(ctx),
+      fetchWellfound(ctx),
+      fetchDice(ctx),
+      fetchUSAJobs(ctx),
     ])
 
+    const raw: NormalizedJob[] = []
+    const sourceStats: Record<string, number> = {}
+
     for (const result of results) {
-      if (result.status === "fulfilled") raw.push(...result.value)
+      if (result.status === "fulfilled") {
+        raw.push(...result.value)
+        for (const job of result.value) {
+          sourceStats[job.source] = (sourceStats[job.source] || 0) + 1
+        }
+      }
     }
 
+    // Deduplicate by external_id
     const seen = new Set<string>()
-
     const unique = raw.filter(job => {
       if (!job.external_id || !job.source_url) return false
-
       const key = `${job.source}_${job.external_id}`
-
       if (seen.has(key)) return false
-
       seen.add(key)
       return true
     })
 
     let saved = 0
-
     for (let i = 0; i < unique.length; i += 50) {
       const batch = unique.slice(i, i + 50)
-
       const { error } = await supabase
         .from("jobs")
-        .upsert(batch, {
-          onConflict: "external_id",
-          ignoreDuplicates: false,
-        })
+        .upsert(batch, { onConflict: "external_id", ignoreDuplicates: false })
 
       if (error) {
         console.error("Supabase upsert error:", error.message)
@@ -479,18 +459,12 @@ export async function GET(request: Request) {
       country: countryParam,
       countries_searched: countries,
       total_found: unique.length,
-      count: saved,
-      message: `Fetched ${saved} jobs for "${query}" from global + remote sources.`,
+      saved,
+      sources: sourceStats,
+      message: `Fetched ${saved} jobs for "${query}" across ${countries.length} countries from ${Object.keys(sourceStats).length} sources.`,
     })
   } catch (err: any) {
     console.error("Fetch route error:", err)
-
-    return NextResponse.json(
-      {
-        success: false,
-        error: err.message || "Unknown server error",
-      },
-      { status: 500 }
-    )
+    return NextResponse.json({ success: false, error: err.message || "Unknown server error" }, { status: 500 })
   }
 }
