@@ -1,4 +1,5 @@
-export * from "./types"
+﻿export * from "./types"
+// Phase 1
 export { fetchJooble } from "./jooble"
 export { fetchRemoteOK } from "./remoteok"
 export { fetchWeWorkRemotely } from "./weworkremotely"
@@ -6,3 +7,9 @@ export { fetchHimalayas } from "./himalayas"
 export { fetchWellfound } from "./wellfound"
 export { fetchDice } from "./dice"
 export { fetchUSAJobs } from "./usajobs"
+// Phase 2 - ATS platforms
+export { fetchAshby } from "./ashby"
+export { fetchWorkable } from "./workable"
+export { fetchSmartRecruiters } from "./smartrecruiters"
+export { fetchBambooHR } from "./bamboohr"
+export { fetchJobvite } from "./jobvite"
