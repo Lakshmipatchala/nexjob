@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 import { useEffect, useState } from "react"
 import { createClient } from "@/lib/supabase"
 import { useUIStore } from "@/store/ui.store"
@@ -22,17 +22,17 @@ interface Job {
 }
 
 const COUNTRIES = [
-  { code: "US", name: "United States", flag: "ðŸ‡ºðŸ‡¸" },
-  { code: "REMOTE", name: "Remote (Worldwide)", flag: "ðŸŒ" },
-  { code: "IN", name: "India", flag: "ðŸ‡®ðŸ‡³" },
-  { code: "GB", name: "United Kingdom", flag: "ðŸ‡¬ðŸ‡§" },
-  { code: "CA", name: "Canada", flag: "ðŸ‡¨ðŸ‡¦" },
-  { code: "AU", name: "Australia", flag: "ðŸ‡¦ðŸ‡º" },
-  { code: "DE", name: "Germany", flag: "ðŸ‡©ðŸ‡ª" },
-  { code: "SG", name: "Singapore", flag: "ðŸ‡¸ðŸ‡¬" },
-  { code: "AE", name: "UAE", flag: "ðŸ‡¦ðŸ‡ª" },
-  { code: "NL", name: "Netherlands", flag: "ðŸ‡³ðŸ‡±" },
-  { code: "FR", name: "France", flag: "ðŸ‡«ðŸ‡·" },
+  { code: "US", name: "United States", flag: "" },
+  { code: "REMOTE", name: "Remote (Worldwide)", flag: "" },
+  { code: "IN", name: "India", flag: "" },
+  { code: "GB", name: "United Kingdom", flag: "" },
+  { code: "CA", name: "Canada", flag: "" },
+  { code: "AU", name: "Australia", flag: "" },
+  { code: "DE", name: "Germany", flag: "" },
+  { code: "SG", name: "Singapore", flag: "" },
+  { code: "AE", name: "UAE", flag: "" },
+  { code: "NL", name: "Netherlands", flag: "" },
+  { code: "FR", name: "France", flag: "" },
 ]
 
 const DOMAINS = [
@@ -290,18 +290,39 @@ export default function JobsPage() {
   })
 
   const srcColor: Record<string, { color: string, bg: string }> = {
-    linkedin:   { color: "#60a5fa", bg: "rgba(96,165,250,0.12)" },
-    indeed:     { color: "#fbbf24", bg: "rgba(251,191,36,0.12)" },
-    glassdoor:  { color: "#4ade80", bg: "rgba(74,222,128,0.12)" },
-    remotive:   { color: "#f472b6", bg: "rgba(244,114,182,0.12)" },
-    adzuna:     { color: "#fb923c", bg: "rgba(251,146,60,0.12)" },
-    dice:       { color: "#a78bfa", bg: "rgba(167,139,250,0.12)" },
-    greenhouse: { color: "#34d399", bg: "rgba(52,211,153,0.12)" },
-    lever:      { color: "#f87171", bg: "rgba(248,113,113,0.12)" },
-    jobicy:     { color: "#60a5fa", bg: "rgba(96,165,250,0.12)" },
-    monster:    { color: "#fb923c", bg: "rgba(251,146,60,0.12)" },
-    naukri:     { color: "#fbbf24", bg: "rgba(251,191,36,0.12)" },
-    other:      { color: "#94a3b8", bg: "rgba(148,163,184,0.12)" },
+    linkedin:        { color: "#60a5fa", bg: "rgba(96,165,250,0.12)" },
+    indeed:          { color: "#fbbf24", bg: "rgba(251,191,36,0.12)" },
+    glassdoor:       { color: "#4ade80", bg: "rgba(74,222,128,0.12)" },
+    remotive:        { color: "#f472b6", bg: "rgba(244,114,182,0.12)" },
+    adzuna:          { color: "#fb923c", bg: "rgba(251,146,60,0.12)" },
+    dice:            { color: "#a78bfa", bg: "rgba(167,139,250,0.12)" },
+    greenhouse:      { color: "#34d399", bg: "rgba(52,211,153,0.12)" },
+    lever:           { color: "#f87171", bg: "rgba(248,113,113,0.12)" },
+    jobicy:          { color: "#60a5fa", bg: "rgba(96,165,250,0.12)" },
+    monster:         { color: "#fb923c", bg: "rgba(251,146,60,0.12)" },
+    naukri:          { color: "#fbbf24", bg: "rgba(251,191,36,0.12)" },
+    ashby:           { color: "#818cf8", bg: "rgba(129,140,248,0.12)" },
+    workable:        { color: "#38bdf8", bg: "rgba(56,189,248,0.12)" },
+    smartrecruiters: { color: "#fb923c", bg: "rgba(251,146,60,0.12)" },
+    bamboohr:        { color: "#4ade80", bg: "rgba(74,222,128,0.12)" },
+    jobvite:         { color: "#f472b6", bg: "rgba(244,114,182,0.12)" },
+    bayt:            { color: "#fbbf24", bg: "rgba(251,191,36,0.12)" },
+    gulftalent:      { color: "#fb923c", bg: "rgba(251,146,60,0.12)" },
+    shine:           { color: "#a78bfa", bg: "rgba(167,139,250,0.12)" },
+    eures:           { color: "#60a5fa", bg: "rgba(96,165,250,0.12)" },
+    jobsdb:          { color: "#34d399", bg: "rgba(52,211,153,0.12)" },
+    hackernews:      { color: "#fb923c", bg: "rgba(251,146,60,0.12)" },
+    contra:          { color: "#f472b6", bg: "rgba(244,114,182,0.12)" },
+    arbeitnow:       { color: "#38bdf8", bg: "rgba(56,189,248,0.12)" },
+    findwork:        { color: "#818cf8", bg: "rgba(129,140,248,0.12)" },
+    guru:            { color: "#fbbf24", bg: "rgba(251,191,36,0.12)" },
+    authenticjobs:   { color: "#4ade80", bg: "rgba(74,222,128,0.12)" },
+    jooble:          { color: "#f87171", bg: "rgba(248,113,113,0.12)" },
+    remoteok:        { color: "#4ade80", bg: "rgba(74,222,128,0.12)" },
+    himalayas:       { color: "#818cf8", bg: "rgba(129,140,248,0.12)" },
+    wellfound:       { color: "#38bdf8", bg: "rgba(56,189,248,0.12)" },
+    usajobs:         { color: "#60a5fa", bg: "rgba(96,165,250,0.12)" },
+    other:           { color: "#94a3b8", bg: "rgba(148,163,184,0.12)" },
   }
 
   const pageBtn = (active: boolean, disabled?: boolean) => ({
@@ -327,7 +348,7 @@ export default function JobsPage() {
       {showFilters && (
         <div style={{ width: "260px", minWidth: "260px", background: "hsl(228 25% 7%)", borderRight: "1px solid hsl(228 20% 13%)", padding: "20px 16px", overflowY: "auto" as const, height: "100vh", position: "sticky" as const, top: 0 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-            <span style={{ fontSize: "14px", fontWeight: "700", color: "white" }}>ðŸŽ›ï¸ Refine Results</span>
+            <span style={{ fontSize: "14px", fontWeight: "700", color: "white" }}> Refine Results</span>
             {activeFilters.length > 0 && (
               <button onClick={clearFilters} style={{ background: "rgba(248,113,113,0.15)", color: "#f87171", border: "none", borderRadius: "6px", padding: "3px 8px", fontSize: "11px", cursor: "pointer" }}>
                 Clear all
@@ -348,7 +369,7 @@ export default function JobsPage() {
 
           {/* Country */}
           <div style={{ marginBottom: "14px" }}>
-            <label style={{ fontSize: "11px", fontWeight: "600", color: "hsl(220 15% 45%)", textTransform: "uppercase" as const, letterSpacing: "0.5px", display: "block", marginBottom: "6px" }}>ðŸŒ Country / Region</label>
+            <label style={{ fontSize: "11px", fontWeight: "600", color: "hsl(220 15% 45%)", textTransform: "uppercase" as const, letterSpacing: "0.5px", display: "block", marginBottom: "6px" }}> Country / Region</label>
             <select value={country} onChange={e=>setCountry(e.target.value)}
               style={{ background: "hsl(228 25% 10%)", border: "1px solid hsl(228 20% 18%)", borderRadius: "8px", padding: "7px 10px", color: "white", fontSize: "12px", outline: "none", cursor: "pointer", width: "100%" }}>
               {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.flag} {c.name}</option>)}
@@ -357,7 +378,7 @@ export default function JobsPage() {
 
           {/* Domain */}
           <div style={{ marginBottom: "14px" }}>
-            <label style={{ fontSize: "11px", fontWeight: "600", color: "hsl(220 15% 45%)", textTransform: "uppercase" as const, letterSpacing: "0.5px", display: "block", marginBottom: "6px" }}>ðŸ’¼ Domain</label>
+            <label style={{ fontSize: "11px", fontWeight: "600", color: "hsl(220 15% 45%)", textTransform: "uppercase" as const, letterSpacing: "0.5px", display: "block", marginBottom: "6px" }}> Domain</label>
             <select value={domain} onChange={e=>setDomain(e.target.value)}
               style={{ background: "hsl(228 25% 10%)", border: "1px solid hsl(228 20% 18%)", borderRadius: "8px", padding: "7px 10px", color: "white", fontSize: "12px", outline: "none", cursor: "pointer", width: "100%" }}>
               {DOMAINS.map(d => <option key={d} value={d}>{d}</option>)}
@@ -366,18 +387,18 @@ export default function JobsPage() {
 
           {/* Experience */}
           <div style={{ marginBottom: "14px" }}>
-            <label style={{ fontSize: "11px", fontWeight: "600", color: "hsl(220 15% 45%)", textTransform: "uppercase" as const, letterSpacing: "0.5px", display: "block", marginBottom: "6px" }}>ðŸ“Š Experience</label>
+            <label style={{ fontSize: "11px", fontWeight: "600", color: "hsl(220 15% 45%)", textTransform: "uppercase" as const, letterSpacing: "0.5px", display: "block", marginBottom: "6px" }}> Experience</label>
             {sel(experience, EXPERIENCE_LEVELS, setExperience)}
           </div>
 
           {/* Work mode */}
           <div style={{ marginBottom: "14px" }}>
-            <label style={{ fontSize: "11px", fontWeight: "600", color: "hsl(220 15% 45%)", textTransform: "uppercase" as const, letterSpacing: "0.5px", display: "block", marginBottom: "6px" }}>ðŸ  Work Mode</label>
+            <label style={{ fontSize: "11px", fontWeight: "600", color: "hsl(220 15% 45%)", textTransform: "uppercase" as const, letterSpacing: "0.5px", display: "block", marginBottom: "6px" }}> Work Mode</label>
             <div style={{ display: "flex", flexDirection: "column" as const, gap: "4px" }}>
               {[["all","All Modes"],["remote","Remote"],["hybrid","Hybrid"],["onsite","Onsite"]].map(([v,l]) => (
                 <button key={v} onClick={()=>setWorkMode(v)}
                   style={{ textAlign: "left" as const, padding: "7px 10px", borderRadius: "7px", border: workMode===v ? "1px solid rgba(124,111,240,0.4)" : "1px solid transparent", background: workMode===v ? "rgba(124,111,240,0.15)" : "transparent", color: workMode===v ? "#9b8ff4" : "hsl(220 15% 60%)", fontSize: "12px", cursor: "pointer", fontWeight: workMode===v ? "600" : "400" as const }}>
-                  {workMode===v ? "â— " : "â—‹ "}{l}
+                  {workMode===v ? "● " : "○ "}{l}
                 </button>
               ))}
             </div>
@@ -385,12 +406,12 @@ export default function JobsPage() {
 
           {/* Job type */}
           <div style={{ marginBottom: "14px" }}>
-            <label style={{ fontSize: "11px", fontWeight: "600", color: "hsl(220 15% 45%)", textTransform: "uppercase" as const, letterSpacing: "0.5px", display: "block", marginBottom: "6px" }}>ðŸ“‹ Job Type</label>
+            <label style={{ fontSize: "11px", fontWeight: "600", color: "hsl(220 15% 45%)", textTransform: "uppercase" as const, letterSpacing: "0.5px", display: "block", marginBottom: "6px" }}> Job Type</label>
             <div style={{ display: "flex", flexDirection: "column" as const, gap: "4px" }}>
               {[["all","All Types"],["full_time","Full Time"],["contract","Contract"],["part_time","Part Time"]].map(([v,l]) => (
                 <button key={v} onClick={()=>setJobType(v)}
                   style={{ textAlign: "left" as const, padding: "7px 10px", borderRadius: "7px", border: jobType===v ? "1px solid rgba(124,111,240,0.4)" : "1px solid transparent", background: jobType===v ? "rgba(124,111,240,0.15)" : "transparent", color: jobType===v ? "#9b8ff4" : "hsl(220 15% 60%)", fontSize: "12px", cursor: "pointer", fontWeight: jobType===v ? "600" : "400" as const }}>
-                  {jobType===v ? "â— " : "â—‹ "}{l}
+                  {jobType===v ? "● " : "○ "}{l}
                 </button>
               ))}
             </div>
@@ -398,13 +419,13 @@ export default function JobsPage() {
 
           {/* Date posted */}
           <div style={{ marginBottom: "14px" }}>
-            <label style={{ fontSize: "11px", fontWeight: "600", color: "hsl(220 15% 45%)", textTransform: "uppercase" as const, letterSpacing: "0.5px", display: "block", marginBottom: "6px" }}>ðŸ“… Date Posted</label>
+            <label style={{ fontSize: "11px", fontWeight: "600", color: "hsl(220 15% 45%)", textTransform: "uppercase" as const, letterSpacing: "0.5px", display: "block", marginBottom: "6px" }}> Date Posted</label>
             {sel(dateFilter, DATE_FILTERS, setDateFilter)}
           </div>
 
           {/* Salary */}
           <div style={{ marginBottom: "14px" }}>
-            <label style={{ fontSize: "11px", fontWeight: "600", color: "hsl(220 15% 45%)", textTransform: "uppercase" as const, letterSpacing: "0.5px", display: "block", marginBottom: "6px" }}>ðŸ’° Min Salary (USD)</label>
+            <label style={{ fontSize: "11px", fontWeight: "600", color: "hsl(220 15% 45%)", textTransform: "uppercase" as const, letterSpacing: "0.5px", display: "block", marginBottom: "6px" }}> Min Salary (USD)</label>
             <select value={salaryMin} onChange={e=>setSalaryMin(e.target.value)}
               style={{ background: "hsl(228 25% 10%)", border: "1px solid hsl(228 20% 18%)", borderRadius: "8px", padding: "7px 10px", color: "white", fontSize: "12px", outline: "none", cursor: "pointer", width: "100%" }}>
               <option value="">No minimum</option>
@@ -419,7 +440,7 @@ export default function JobsPage() {
 
           {/* Sort */}
           <div style={{ marginBottom: "14px" }}>
-            <label style={{ fontSize: "11px", fontWeight: "600", color: "hsl(220 15% 45%)", textTransform: "uppercase" as const, letterSpacing: "0.5px", display: "block", marginBottom: "6px" }}>â†•ï¸ Sort By</label>
+            <label style={{ fontSize: "11px", fontWeight: "600", color: "hsl(220 15% 45%)", textTransform: "uppercase" as const, letterSpacing: "0.5px", display: "block", marginBottom: "6px" }}> Sort By</label>
             <select value={sortBy} onChange={e=>setSortBy(e.target.value)}
               style={{ background: "hsl(228 25% 10%)", border: "1px solid hsl(228 20% 18%)", borderRadius: "8px", padding: "7px 10px", color: "white", fontSize: "12px", outline: "none", cursor: "pointer", width: "100%" }}>
               <option value="newest">Newest First</option>
@@ -447,13 +468,13 @@ export default function JobsPage() {
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <button onClick={()=>setShowFilters(!showFilters)}
               style={{ background: showFilters ? "rgba(124,111,240,0.15)" : "hsl(228 25% 10%)", border: showFilters ? "1px solid rgba(124,111,240,0.3)" : "1px solid hsl(228 20% 18%)", borderRadius: "8px", padding: "7px 12px", color: showFilters ? "#9b8ff4" : "hsl(220 15% 60%)", fontSize: "12px", cursor: "pointer", fontWeight: "600" as const }}>
-              ðŸŽ›ï¸ {showFilters ? "Hide" : "Show"} Filters
+               {showFilters ? "Hide" : "Show"} Filters
             </button>
             <div>
               <h1 style={{ fontSize: "20px", fontWeight: "700", color: "white", margin: 0 }}>Browse Jobs</h1>
               <p style={{ color: "hsl(220 15% 50%)", fontSize: "12px", margin: 0 }}>
                 Showing {filteredJobs.length} of {allJobs.length} jobs
-                {activeFilters.length > 0 && <span style={{ color: "#9b8ff4" }}> Â· {activeFilters.length} filter{activeFilters.length>1?"s":""} active</span>}
+                {activeFilters.length > 0 && <span style={{ color: "#9b8ff4" }}> · {activeFilters.length} filter{activeFilters.length>1?"s":""} active</span>}
               </p>
             </div>
           </div>
@@ -463,15 +484,15 @@ export default function JobsPage() {
               style={{ background: "hsl(228 25% 10%)", border: "1px solid hsl(228 20% 18%)", borderRadius: "8px", padding: "7px 12px", color: "white", fontSize: "13px", outline: "none", width: "160px" }} />
             <button onClick={fetchFreshJobs} disabled={fetching}
               style={{ background: fetching?"hsl(228 20% 14%)":"linear-gradient(135deg,#7c6ff0,#a78bfa)", color: "white", padding: "7px 16px", borderRadius: "8px", fontSize: "13px", fontWeight: "600", border: "none", cursor: fetching?"not-allowed":"pointer", opacity: fetching?0.7:1, whiteSpace: "nowrap" as const }}>
-              {fetching?"â³ Fetching...":"ðŸ” Fetch Jobs"}
+              {fetching?" Fetching...":" Fetch Jobs"}
             </button>
             <button onClick={scoreJobs} disabled={scoring||allJobs.length===0}
               style={{ background: "rgba(124,111,240,0.12)", color: "#9b8ff4", padding: "7px 14px", borderRadius: "8px", fontSize: "13px", fontWeight: "600", border: "1px solid rgba(124,111,240,0.25)", cursor: scoring?"not-allowed":"pointer", opacity: scoring?0.7:1, whiteSpace: "nowrap" as const }}>
-              {scoring?"â³":"âœ¨"} AI Match
+              {scoring?"":""} AI Match
             </button>
             <button onClick={()=>loadJobs(userId,"",country)}
               style={{ background: "transparent", color: "hsl(220 15% 55%)", padding: "7px 12px", borderRadius: "8px", fontSize: "13px", border: "1px solid hsl(228 20% 18%)", cursor: "pointer" }}>
-              ðŸ”„
+              ↺
             </button>
           </div>
         </div>
@@ -491,11 +512,11 @@ export default function JobsPage() {
 
         {loading ? (
           <div style={{ textAlign: "center" as const, padding: "64px", color: "hsl(220 15% 45%)" }}>
-            <div style={{ fontSize: "32px", marginBottom: "12px" }}>â³</div>Loading...
+            <div style={{ fontSize: "32px", marginBottom: "12px" }}></div>Loading...
           </div>
         ) : paginatedJobs.length === 0 ? (
           <div style={{ textAlign: "center" as const, padding: "48px", color: "hsl(220 15% 45%)" }}>
-            <div style={{ fontSize: "48px", marginBottom: "12px" }}>ðŸ”</div>
+            <div style={{ fontSize: "48px", marginBottom: "12px" }}></div>
             <p style={{ fontSize: "16px", color: "white", marginBottom: "6px" }}>No jobs found</p>
             <p style={{ fontSize: "13px", marginBottom: "16px" }}>
               {activeFilters.length > 0 ? "Try clearing some filters" : `Click Fetch Jobs to load "${fetchQuery}"`}
@@ -525,7 +546,7 @@ export default function JobsPage() {
                       </div>
                       <button onClick={()=>toggleSave(job)} disabled={isSaving}
                         style={{ background: saved?"rgba(124,111,240,0.2)":"transparent", border: saved?"1px solid rgba(124,111,240,0.4)":"1px solid hsl(228 20% 22%)", borderRadius: "6px", padding: "3px 8px", cursor: "pointer", fontSize: "11px", color: saved?"#9b8ff4":"hsl(220 15% 50%)", fontWeight: "600" as const }}>
-                        {isSaving?"...":saved?"â˜…":"â˜† Save"}
+                        {isSaving?"...":saved?"★":"☆ Save"}
                       </button>
                     </div>
                     <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
@@ -535,7 +556,7 @@ export default function JobsPage() {
                       }
                       <div style={{ flex:1,minWidth:0 }}>
                         <div style={{ fontSize:"13px",fontWeight:"600",color:"white",marginBottom:"2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" as const }}>{job.title}</div>
-                        <div style={{ fontSize:"11px",color:"hsl(220 15% 55%)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" as const }}>{job.company} Â· {job.location}</div>
+                        <div style={{ fontSize:"11px",color:"hsl(220 15% 55%)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" as const }}>{job.company} · {job.location}</div>
                       </div>
                     </div>
                     <div style={{ marginBottom:"10px" }}>
@@ -545,11 +566,11 @@ export default function JobsPage() {
                       {job.salary_min&&<span style={badge(`$${Math.round(job.salary_min/1000)}k`,"#fbbf24","rgba(251,191,36,0.12)")}>${Math.round(job.salary_min/1000)}k</span>}
                     </div>
                     <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",gap:"6px" }}>
-                      <span style={{ fontSize:"11px",color:"hsl(220 15% 40%)" }}>ðŸ• {timeAgo(job.posted_at)}</span>
+                      <span style={{ fontSize:"11px",color:"hsl(220 15% 40%)" }}> {timeAgo(job.posted_at)}</span>
                       <div style={{ display:"flex",gap:"5px" }}>
                         <button onClick={()=>sendToResume(job)} style={{ background:"rgba(124,111,240,0.12)",color:"#9b8ff4",padding:"5px 8px",borderRadius:"6px",fontSize:"11px",fontWeight:"600",border:"1px solid rgba(124,111,240,0.2)",cursor:"pointer" }}>AI Resume</button>
-                        <button onClick={()=>oneClickApply(job)} style={{ background:"linear-gradient(135deg,#059669,#10b981)",color:"white",padding:"5px 8px",borderRadius:"6px",fontSize:"11px",fontWeight:"600",border:"none",cursor:"pointer" }}>âš¡ 1-Click</button>
-                        <button onClick={()=>applyAndTrack(job)} style={{ background:"linear-gradient(135deg,#7c6ff0,#a78bfa)",color:"white",padding:"5px 8px",borderRadius:"6px",fontSize:"11px",fontWeight:"600",border:"none",cursor:"pointer" }}>Apply â†’</button>
+                        <button onClick={()=>oneClickApply(job)} style={{ background:"linear-gradient(135deg,#059669,#10b981)",color:"white",padding:"5px 8px",borderRadius:"6px",fontSize:"11px",fontWeight:"600",border:"none",cursor:"pointer" }}>⚡ 1-Click</button>
+                        <button onClick={()=>applyAndTrack(job)} style={{ background:"linear-gradient(135deg,#7c6ff0,#a78bfa)",color:"white",padding:"5px 8px",borderRadius:"6px",fontSize:"11px",fontWeight:"600",border:"none",cursor:"pointer" }}>Apply →</button>
                       </div>
                     </div>
                   </div>
@@ -558,12 +579,12 @@ export default function JobsPage() {
             </div>
             {totalPages>1&&(
               <div style={{ display:"flex",justifyContent:"center",alignItems:"center",gap:"6px",flexWrap:"wrap" as const }}>
-                <button onClick={()=>setCurrentPage(1)} disabled={currentPage===1} style={pageBtn(false,currentPage===1)}>Â«</button>
-                <button onClick={()=>setCurrentPage(p=>Math.max(1,p-1))} disabled={currentPage===1} style={pageBtn(false,currentPage===1)}>â€¹</button>
+                <button onClick={()=>setCurrentPage(1)} disabled={currentPage===1} style={pageBtn(false,currentPage===1)}>«</button>
+                <button onClick={()=>setCurrentPage(p=>Math.max(1,p-1))} disabled={currentPage===1} style={pageBtn(false,currentPage===1)}>‹</button>
                 {Array.from({length:totalPages},(_,i)=>i+1).filter(p=>p===1||p===totalPages||Math.abs(p-currentPage)<=2).reduce((acc:(number|string)[],p,i,arr)=>{if(i>0&&(p as number)-(arr[i-1] as number)>1)acc.push("...");acc.push(p);return acc},[]).map((p,i)=>(<button key={i} onClick={()=>typeof p==="number"&&setCurrentPage(p)} disabled={p==="..."} style={pageBtn(p===currentPage,p==="...")}>{p}</button>))}
-                <button onClick={()=>setCurrentPage(p=>Math.min(totalPages,p+1))} disabled={currentPage===totalPages} style={pageBtn(false,currentPage===totalPages)}>â€º</button>
-                <button onClick={()=>setCurrentPage(totalPages)} disabled={currentPage===totalPages} style={pageBtn(false,currentPage===totalPages)}>Â»</button>
-                <span style={{ fontSize:"12px",color:"hsl(220 15% 40%)",marginLeft:"6px" }}>{currentPage}/{totalPages} Â· {filteredJobs.length} jobs</span>
+                <button onClick={()=>setCurrentPage(p=>Math.min(totalPages,p+1))} disabled={currentPage===totalPages} style={pageBtn(false,currentPage===totalPages)}>›</button>
+                <button onClick={()=>setCurrentPage(totalPages)} disabled={currentPage===totalPages} style={pageBtn(false,currentPage===totalPages)}>»</button>
+                <span style={{ fontSize:"12px",color:"hsl(220 15% 40%)",marginLeft:"6px" }}>{currentPage}/{totalPages} · {filteredJobs.length} jobs</span>
               </div>
             )}
           </>
