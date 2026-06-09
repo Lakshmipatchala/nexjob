@@ -27,9 +27,9 @@ export async function GET(request: Request) {
     // Filter by country when a specific one is selected (not GLOBAL/REMOTE/empty)
     if (country && country !== "GLOBAL" && country !== "REMOTE" && country !== "ALL") {
       const countryNames: Record<string, string[]> = {
-        US: ["United States", "USA", ", US", "Remote - US", "Remote, US"],
+        US: ["United States", "USA"],
         IN: ["India", "Bangalore", "Mumbai", "Delhi", "Hyderabad", "Pune", "Chennai"],
-        GB: ["United Kingdom", "London", "UK", "England"],
+        GB: ["United Kingdom", "London", "England"],
         CA: ["Canada", "Toronto", "Vancouver", "Montreal"],
         AU: ["Australia", "Sydney", "Melbourne"],
         DE: ["Germany", "Berlin", "Munich", "Hamburg"],
@@ -41,7 +41,7 @@ export async function GET(request: Request) {
         HK: ["Hong Kong"],
         JP: ["Japan", "Tokyo"],
         PL: ["Poland", "Warsaw"],
-        BR: ["Brazil", "São Paulo"],
+        BR: ["Brazil"],
         ZA: ["South Africa", "Cape Town", "Johannesburg"],
       }
       const terms = countryNames[country]
