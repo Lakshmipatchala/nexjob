@@ -59,7 +59,33 @@ const ALL_QUERIES = [
   "SAP developer", "salesforce developer", "ServiceNow developer",
 ]
 
-// Distribute 15 queries per hour evenly across the full list
+// 14-day country rotation — each region gets its own dedicated slot
+// Days 0-6 = week 1, days 7-13 = week 2 (based on day-of-fortnight)
+const COUNTRY_ROTATION: Record<number, string> = {
+  0:  "US",      // Sunday W1    — North America
+  1:  "GB",      // Monday W1    — UK
+  2:  "IN",      // Tuesday W1   — India
+  3:  "DE",      // Wednesday W1 — Germany / Western EU
+  4:  "AE",      // Thursday W1  — UAE / Gulf
+  5:  "CA",      // Friday W1    — Canada / Australia
+  6:  "GLOBAL",  // Saturday W1  — catch-all
+
+  7:  "SG",      // Sunday W2    — Asia-Pacific
+  8:  "FR",      // Monday W2    — France / Southern EU
+  9:  "SA",      // Tuesday W2   — Saudi Arabia
+  10: "PL",      // Wednesday W2 — Eastern EU
+  11: "HK",      // Thursday W2  — Hong Kong / JobsDB
+  12: "ZA",      // Friday W2    — Africa
+  13: "GLOBAL",  // Saturday W2  — catch-all
+}
+
+function getTodayCountry(): string {
+  const epoch = new Date("2024-01-07") // Sunday as day-0 anchor
+  const daysSinceEpoch = Math.floor((Date.now() - epoch.getTime()) / 86_400_000)
+  return COUNTRY_ROTATION[daysSinceEpoch % 14] ?? "GLOBAL"
+}
+
+// 15 queries per hour, evenly spread across full list
 function getHourlyQueries(): string[] {
   const hour = new Date().getUTCHours()
   const start = (hour * 15) % ALL_QUERIES.length
@@ -70,19 +96,16 @@ function getHourlyQueries(): string[] {
   return queries
 }
 
-// Country groups rotated by day-of-week to spread load
-const COUNTRY_GROUPS: Record<number, string> = {
-  0: "US",       // Sunday
-  1: "GB",       // Monday
-  2: "IN",       // Tuesday
-  3: "DE",       // Wednesday  (covers EU via JSearch + Adzuna)
-  4: "AE",       // Thursday   (covers Gulf region)
-  5: "CA",       // Friday
-  6: "GLOBAL",   // Saturday   (catch-all: all countries)
-}
-
-function getTodayCountry(): string {
-  return COUNTRY_GROUPS[new Date().getUTCDay()] ?? "GLOBAL"
+// Fingerprint for cross-source deduplication
+function contentHash(title: string, company: string, location: string): string {
+  const normalized = `${title}|${company}|${location}`
+    .toLowerCase()
+    .replace(/[^a-z0-9|]/g, "")
+  let hash = 0
+  for (let i = 0; i < normalized.length; i++) {
+    hash = ((hash << 5) - hash + normalized.charCodeAt(i)) | 0
+  }
+  return Math.abs(hash).toString(36)
 }
 
 export async function GET(request: Request) {
@@ -97,24 +120,43 @@ export async function GET(request: Request) {
       process.env.SUPABASE_SECRET_KEY!
     )
 
-    // Remove jobs older than 30 days
-    const { error: cleanupError } = await supabase
+    const now = new Date().toISOString()
+    const staleThreshold = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
+    const expiredThreshold = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+
+    // Hard-delete jobs older than 30 days
+    const { error: deleteError } = await supabase
       .from("jobs")
       .delete()
-      .lt("expires_at", new Date().toISOString())
+      .lt("expires_at", expiredThreshold)
 
-    if (cleanupError) {
-      console.error("Cleanup error:", cleanupError.message)
-    }
+    if (deleteError) console.error("Hard-delete error:", deleteError.message)
+
+    // Soft-expire jobs older than 14 days (mark inactive so UI hides them)
+    const { error: softExpireError } = await supabase
+      .from("jobs")
+      .update({ is_active: false })
+      .lt("posted_at", staleThreshold)
+      .eq("is_active", true)
+
+    if (softExpireError) console.error("Soft-expire error:", softExpireError.message)
+
+    // Deduplicate by content hash — remove lower-quality duplicate listings
+    // Find jobs with duplicate content_hash, keep the one with the most data
+    const { data: dupes } = await supabase
+      .rpc("delete_duplicate_jobs")
+      .select()
+      .maybeSingle()
+    // Note: delete_duplicate_jobs is an optional Supabase function — skip if not deployed
 
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://nexjob-sigma.vercel.app"
     const queries = getHourlyQueries()
     const country = getTodayCountry()
     let totalFetched = 0
-    const results: { query: string; count?: number; sources?: Record<string, number>; error?: string }[] = []
 
-    for (const query of queries) {
-      try {
+    // Run all queries in parallel — major speedup vs sequential loop
+    const fetchResults = await Promise.allSettled(
+      queries.map(async (query) => {
         const res = await fetch(
           `${baseUrl}/api/jobs/fetch?query=${encodeURIComponent(query)}&country=${country}`,
           {
@@ -123,26 +165,29 @@ export async function GET(request: Request) {
           }
         )
         const data = await res.json()
-        if (data.success) {
-          totalFetched += data.saved || 0
-          results.push({ query, count: data.saved, sources: data.sources })
-        } else {
-          results.push({ query, error: data.error || "fetch failed" })
+        return { query, ...data }
+      })
+    )
+
+    const results = fetchResults.map((r) => {
+      if (r.status === "fulfilled") {
+        if (r.value.success) {
+          totalFetched += r.value.saved || 0
+          return { query: r.value.query, count: r.value.saved, sources: r.value.sources }
         }
-      } catch (e) {
-        results.push({ query, error: String(e) })
+        return { query: r.value.query, error: r.value.error || "fetch failed" }
       }
-    }
+      return { query: "unknown", error: String(r.reason) }
+    })
 
     return NextResponse.json({
       success: true,
       hour: new Date().getUTCHours(),
-      day: new Date().getUTCDay(),
       country_focus: country,
       queries_run: queries,
       total_fetched: totalFetched,
       results,
-      message: `Cron: fetched ${totalFetched} jobs for ${queries.length} queries (country focus: ${country})`,
+      message: `Cron: fetched ${totalFetched} jobs for ${queries.length} queries in parallel (country: ${country})`,
     })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })

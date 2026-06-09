@@ -382,6 +382,14 @@ async function fetchLever(query: string, now: string, expires: string): Promise<
   return raw
 }
 
+// Cross-source dedup fingerprint
+function contentFingerprint(title: string, company: string, location: string): string {
+  const s = `${title}|${company}|${location}`.toLowerCase().replace(/[^a-z0-9|]/g, "")
+  let h = 0
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0
+  return Math.abs(h).toString(36)
+}
+
 // ── Main route handler ──────────────────────────────────────────────────────
 
 export async function GET(request: Request) {
@@ -453,13 +461,18 @@ export async function GET(request: Request) {
       }
     }
 
-    // Deduplicate by external_id
+    // Deduplicate by external_id, then by content hash (cross-source)
     const seen = new Set<string>()
+    const contentSeen = new Set<string>()
     const unique = raw.filter(job => {
       if (!job.external_id || !job.source_url) return false
       const key = `${job.source}_${job.external_id}`
       if (seen.has(key)) return false
       seen.add(key)
+      // Cross-source dedup: skip if same title+company+location already queued
+      const hash = contentFingerprint(job.title, job.company, job.location)
+      if (contentSeen.has(hash)) return false
+      contentSeen.add(hash)
       return true
     })
 
