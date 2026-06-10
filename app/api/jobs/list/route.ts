@@ -15,8 +15,9 @@ export async function GET(request: Request) {
     let dbQuery = supabase
       .from("jobs")
       .select("*")
+      .eq("is_active", true)
       .order("posted_at", { ascending: false })
-      .limit(500)
+      .limit(1000)
 
     if (query && query.trim()) {
       dbQuery = dbQuery.ilike("title", `%${query.trim()}%`)
