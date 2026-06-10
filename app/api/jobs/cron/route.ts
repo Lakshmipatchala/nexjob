@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server"
+﻿import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 
 const ALL_QUERIES = [
@@ -59,24 +59,24 @@ const ALL_QUERIES = [
   "SAP developer", "salesforce developer", "ServiceNow developer",
 ]
 
-// 14-day country rotation — each region gets its own dedicated slot
+// 14-day country rotation â€” each region gets its own dedicated slot
 // Days 0-6 = week 1, days 7-13 = week 2 (based on day-of-fortnight)
 const COUNTRY_ROTATION: Record<number, string> = {
-  0:  "US",      // Sunday W1    — North America
-  1:  "GB",      // Monday W1    — UK
-  2:  "IN",      // Tuesday W1   — India
-  3:  "DE",      // Wednesday W1 — Germany / Western EU
-  4:  "AE",      // Thursday W1  — UAE / Gulf
-  5:  "CA",      // Friday W1    — Canada / Australia
-  6:  "GLOBAL",  // Saturday W1  — catch-all
+  0:  "US",      // Sunday W1    â€” North America
+  1:  "GB",      // Monday W1    â€” UK
+  2:  "IN",      // Tuesday W1   â€” India
+  3:  "DE",      // Wednesday W1 â€” Germany / Western EU
+  4:  "AE",      // Thursday W1  â€” UAE / Gulf
+  5:  "CA",      // Friday W1    â€” Canada / Australia
+  6:  "GLOBAL",  // Saturday W1  â€” catch-all
 
-  7:  "SG",      // Sunday W2    — Asia-Pacific
-  8:  "FR",      // Monday W2    — France / Southern EU
-  9:  "SA",      // Tuesday W2   — Saudi Arabia
-  10: "PL",      // Wednesday W2 — Eastern EU
-  11: "HK",      // Thursday W2  — Hong Kong / JobsDB
-  12: "ZA",      // Friday W2    — Africa
-  13: "GLOBAL",  // Saturday W2  — catch-all
+  7:  "SG",      // Sunday W2    â€” Asia-Pacific
+  8:  "FR",      // Monday W2    â€” France / Southern EU
+  9:  "SA",      // Tuesday W2   â€” Saudi Arabia
+  10: "PL",      // Wednesday W2 â€” Eastern EU
+  11: "HK",      // Thursday W2  â€” Hong Kong / JobsDB
+  12: "ZA",      // Friday W2    â€” Africa
+  13: "GLOBAL",  // Saturday W2  â€” catch-all
 }
 
 function getTodayCountry(): string {
@@ -141,20 +141,20 @@ export async function GET(request: Request) {
 
     if (softExpireError) console.error("Soft-expire error:", softExpireError.message)
 
-    // Deduplicate by content hash — remove lower-quality duplicate listings
+    // Deduplicate by content hash â€” remove lower-quality duplicate listings
     // Find jobs with duplicate content_hash, keep the one with the most data
     const { data: dupes } = await supabase
       .rpc("delete_duplicate_jobs")
       .select()
       .maybeSingle()
-    // Note: delete_duplicate_jobs is an optional Supabase function — skip if not deployed
+    // Note: delete_duplicate_jobs is an optional Supabase function â€” skip if not deployed
 
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://nexjob-sigma.vercel.app"
     const queries = getHourlyQueries()
     const country = getTodayCountry()
     let totalFetched = 0
 
-    // Run all queries in parallel — major speedup vs sequential loop
+    // Run all queries in parallel â€” major speedup vs sequential loop
     const fetchResults = await Promise.allSettled(
       queries.map(async (query) => {
         const res = await fetch(

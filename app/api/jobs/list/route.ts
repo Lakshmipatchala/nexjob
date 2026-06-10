@@ -12,9 +12,12 @@ export async function GET(request: Request) {
       process.env.SUPABASE_SECRET_KEY!
     )
 
+    const fifteenDaysAgo = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString()
+
     let dbQuery = supabase
       .from("jobs")
       .select("*")
+      .gte("posted_at", fifteenDaysAgo)
       .eq("is_active", true)
       .order("posted_at", { ascending: false })
       .limit(1000)
