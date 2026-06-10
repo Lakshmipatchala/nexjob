@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 import { useEffect, useState } from "react"
 import { createClient } from "@/lib/supabase"
 import { useUIStore } from "@/store/ui.store"
@@ -243,7 +243,33 @@ export default function JobsPage() {
     return true
   }
 
+  const COUNTRY_KEYWORDS: Record<string,string[]> = {
+    US: ["united states","usa",", us",", al",", ak",", az",", ar",", ca",", co",", ct",", de",", fl",", ga",", hi",", id",", il",", in",", ia",", ks",", ky",", la",", me",", md",", ma",", mi",", mn",", ms",", mo",", mt",", ne",", nv",", nh",", nj",", nm",", ny",", nc",", nd",", oh",", ok",", or",", pa",", ri",", sc",", sd",", tn",", tx",", ut",", vt",", va",", wa",", wv",", wi",", wy",", dc","new york","san francisco","los angeles","chicago","seattle","boston","austin","denver","atlanta","dallas","houston","phoenix","philadelphia","san diego","portland","miami","remote"],
+    IN: ["india","bengaluru","bangalore","mumbai","delhi","hyderabad","pune","chennai","gurugram","noida","remote"],
+    GB: ["united kingdom","uk","london","manchester","birmingham","edinburgh","remote"],
+    CA: ["canada","toronto","vancouver","montreal","ottawa","remote"],
+    AU: ["australia","sydney","melbourne","brisbane","perth","remote"],
+    DE: ["germany","berlin","munich","frankfurt","hamburg","remote"],
+    SG: ["singapore","remote"],
+    AE: ["uae","dubai","abu dhabi","remote"],
+    NL: ["netherlands","amsterdam","remote"],
+    FR: ["france","paris","lyon","remote"],
+    REMOTE: ["remote","worldwide","anywhere","global"],
+  }
+
   const filteredJobs = allJobs.filter(j => {
+    // Country filter - strict client-side filtering
+    if (country !== "REMOTE") {
+      const loc = (j.location || "").toLowerCase()
+      const isRemote = j.work_mode === "remote" || loc.includes("remote")
+      if (!isRemote) {
+        const keywords = COUNTRY_KEYWORDS[country] || []
+        const matchesCountry = keywords.some(k => loc.includes(k))
+        if (!matchesCountry) return false
+      }
+    } else {
+      if (j.work_mode !== "remote") return false
+    }
     if (workMode !== "all" && j.work_mode !== workMode) return false
     if (jobType !== "all" && j.job_type !== jobType) return false
     if (!matchesDomain(j.title)) return false
@@ -398,7 +424,7 @@ export default function JobsPage() {
               {[["all","All Modes"],["remote","Remote"],["hybrid","Hybrid"],["onsite","Onsite"]].map(([v,l]) => (
                 <button key={v} onClick={()=>setWorkMode(v)}
                   style={{ textAlign: "left" as const, padding: "7px 10px", borderRadius: "7px", border: workMode===v ? "1px solid rgba(124,111,240,0.4)" : "1px solid transparent", background: workMode===v ? "rgba(124,111,240,0.15)" : "transparent", color: workMode===v ? "#9b8ff4" : "hsl(220 15% 60%)", fontSize: "12px", cursor: "pointer", fontWeight: workMode===v ? "600" : "400" as const }}>
-                  {workMode===v ? "● " : "○ "}{l}
+                  {workMode===v ? "â— " : "â—‹ "}{l}
                 </button>
               ))}
             </div>
@@ -411,7 +437,7 @@ export default function JobsPage() {
               {[["all","All Types"],["full_time","Full Time"],["contract","Contract"],["part_time","Part Time"]].map(([v,l]) => (
                 <button key={v} onClick={()=>setJobType(v)}
                   style={{ textAlign: "left" as const, padding: "7px 10px", borderRadius: "7px", border: jobType===v ? "1px solid rgba(124,111,240,0.4)" : "1px solid transparent", background: jobType===v ? "rgba(124,111,240,0.15)" : "transparent", color: jobType===v ? "#9b8ff4" : "hsl(220 15% 60%)", fontSize: "12px", cursor: "pointer", fontWeight: jobType===v ? "600" : "400" as const }}>
-                  {jobType===v ? "● " : "○ "}{l}
+                  {jobType===v ? "â— " : "â—‹ "}{l}
                 </button>
               ))}
             </div>
@@ -474,7 +500,7 @@ export default function JobsPage() {
               <h1 style={{ fontSize: "20px", fontWeight: "700", color: "white", margin: 0 }}>Browse Jobs</h1>
               <p style={{ color: "hsl(220 15% 50%)", fontSize: "12px", margin: 0 }}>
                 Showing {filteredJobs.length} of {allJobs.length} jobs
-                {activeFilters.length > 0 && <span style={{ color: "#9b8ff4" }}> · {activeFilters.length} filter{activeFilters.length>1?"s":""} active</span>}
+                {activeFilters.length > 0 && <span style={{ color: "#9b8ff4" }}> Â· {activeFilters.length} filter{activeFilters.length>1?"s":""} active</span>}
               </p>
             </div>
           </div>
@@ -492,7 +518,7 @@ export default function JobsPage() {
             </button>
             <button onClick={()=>loadJobs(userId,"",country)}
               style={{ background: "transparent", color: "hsl(220 15% 55%)", padding: "7px 12px", borderRadius: "8px", fontSize: "13px", border: "1px solid hsl(228 20% 18%)", cursor: "pointer" }}>
-              ↺
+              â†º
             </button>
           </div>
         </div>
@@ -546,7 +572,7 @@ export default function JobsPage() {
                       </div>
                       <button onClick={()=>toggleSave(job)} disabled={isSaving}
                         style={{ background: saved?"rgba(124,111,240,0.2)":"transparent", border: saved?"1px solid rgba(124,111,240,0.4)":"1px solid hsl(228 20% 22%)", borderRadius: "6px", padding: "3px 8px", cursor: "pointer", fontSize: "11px", color: saved?"#9b8ff4":"hsl(220 15% 50%)", fontWeight: "600" as const }}>
-                        {isSaving?"...":saved?"★":"☆ Save"}
+                        {isSaving?"...":saved?"â˜…":"â˜† Save"}
                       </button>
                     </div>
                     <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
@@ -556,7 +582,7 @@ export default function JobsPage() {
                       }
                       <div style={{ flex:1,minWidth:0 }}>
                         <div style={{ fontSize:"13px",fontWeight:"600",color:"white",marginBottom:"2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" as const }}>{job.title}</div>
-                        <div style={{ fontSize:"11px",color:"hsl(220 15% 55%)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" as const }}>{job.company} · {job.location}</div>
+                        <div style={{ fontSize:"11px",color:"hsl(220 15% 55%)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" as const }}>{job.company} Â· {job.location}</div>
                       </div>
                     </div>
                     <div style={{ marginBottom:"10px" }}>
@@ -569,8 +595,8 @@ export default function JobsPage() {
                       <span style={{ fontSize:"11px",color:"hsl(220 15% 40%)" }}> {timeAgo(job.posted_at)}</span>
                       <div style={{ display:"flex",gap:"5px" }}>
                         <button onClick={()=>sendToResume(job)} style={{ background:"rgba(124,111,240,0.12)",color:"#9b8ff4",padding:"5px 8px",borderRadius:"6px",fontSize:"11px",fontWeight:"600",border:"1px solid rgba(124,111,240,0.2)",cursor:"pointer" }}>AI Resume</button>
-                        <button onClick={()=>oneClickApply(job)} style={{ background:"linear-gradient(135deg,#059669,#10b981)",color:"white",padding:"5px 8px",borderRadius:"6px",fontSize:"11px",fontWeight:"600",border:"none",cursor:"pointer" }}>⚡ 1-Click</button>
-                        <button onClick={()=>applyAndTrack(job)} style={{ background:"linear-gradient(135deg,#7c6ff0,#a78bfa)",color:"white",padding:"5px 8px",borderRadius:"6px",fontSize:"11px",fontWeight:"600",border:"none",cursor:"pointer" }}>Apply →</button>
+                        <button onClick={()=>oneClickApply(job)} style={{ background:"linear-gradient(135deg,#059669,#10b981)",color:"white",padding:"5px 8px",borderRadius:"6px",fontSize:"11px",fontWeight:"600",border:"none",cursor:"pointer" }}>âš¡ 1-Click</button>
+                        <button onClick={()=>applyAndTrack(job)} style={{ background:"linear-gradient(135deg,#7c6ff0,#a78bfa)",color:"white",padding:"5px 8px",borderRadius:"6px",fontSize:"11px",fontWeight:"600",border:"none",cursor:"pointer" }}>Apply â†’</button>
                       </div>
                     </div>
                   </div>
@@ -579,12 +605,12 @@ export default function JobsPage() {
             </div>
             {totalPages>1&&(
               <div style={{ display:"flex",justifyContent:"center",alignItems:"center",gap:"6px",flexWrap:"wrap" as const }}>
-                <button onClick={()=>setCurrentPage(1)} disabled={currentPage===1} style={pageBtn(false,currentPage===1)}>«</button>
-                <button onClick={()=>setCurrentPage(p=>Math.max(1,p-1))} disabled={currentPage===1} style={pageBtn(false,currentPage===1)}>‹</button>
+                <button onClick={()=>setCurrentPage(1)} disabled={currentPage===1} style={pageBtn(false,currentPage===1)}>Â«</button>
+                <button onClick={()=>setCurrentPage(p=>Math.max(1,p-1))} disabled={currentPage===1} style={pageBtn(false,currentPage===1)}>â€¹</button>
                 {Array.from({length:totalPages},(_,i)=>i+1).filter(p=>p===1||p===totalPages||Math.abs(p-currentPage)<=2).reduce((acc:(number|string)[],p,i,arr)=>{if(i>0&&(p as number)-(arr[i-1] as number)>1)acc.push("...");acc.push(p);return acc},[]).map((p,i)=>(<button key={i} onClick={()=>typeof p==="number"&&setCurrentPage(p)} disabled={p==="..."} style={pageBtn(p===currentPage,p==="...")}>{p}</button>))}
-                <button onClick={()=>setCurrentPage(p=>Math.min(totalPages,p+1))} disabled={currentPage===totalPages} style={pageBtn(false,currentPage===totalPages)}>›</button>
-                <button onClick={()=>setCurrentPage(totalPages)} disabled={currentPage===totalPages} style={pageBtn(false,currentPage===totalPages)}>»</button>
-                <span style={{ fontSize:"12px",color:"hsl(220 15% 40%)",marginLeft:"6px" }}>{currentPage}/{totalPages} · {filteredJobs.length} jobs</span>
+                <button onClick={()=>setCurrentPage(p=>Math.min(totalPages,p+1))} disabled={currentPage===totalPages} style={pageBtn(false,currentPage===totalPages)}>â€º</button>
+                <button onClick={()=>setCurrentPage(totalPages)} disabled={currentPage===totalPages} style={pageBtn(false,currentPage===totalPages)}>Â»</button>
+                <span style={{ fontSize:"12px",color:"hsl(220 15% 40%)",marginLeft:"6px" }}>{currentPage}/{totalPages} Â· {filteredJobs.length} jobs</span>
               </div>
             )}
           </>

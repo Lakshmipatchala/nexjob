@@ -234,7 +234,95 @@ export async function GET(request: Request) {
     } catch (e) { log.adzuna = 0 }
   }
 
-  // SOURCE 7: The Muse
+  // SOURCE 7: We Work Remotely (free, unlimited)
+  try {
+    const res = await fetch(`https://weworkremotely.com/remote-jobs.json`)
+    const jobs = await res.json()
+    const kw = query.toLowerCase()
+    let count = 0
+    for (const j of (jobs || []).filter((j: any) => j.title?.toLowerCase().includes(kw) || j.company?.toLowerCase().includes(kw)).slice(0, 50)) {
+      if (!j.title || !j.url) continue
+      raw.push({
+        title: j.title, company: j.company || "Unknown",
+        company_logo: j.company_logo_url || null,
+        location: j.region || "Remote (Worldwide)",
+        work_mode: "remote", job_type: "full_time",
+        salary_min: null, salary_max: null,
+        source: "weworkremotely",
+        source_url: j.url.startsWith("http") ? j.url : `https://weworkremotely.com${j.url}`,
+        description: j.description?.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 5000) || "",
+        external_id: `wwr_${j.id || j.slug}`,
+        posted_at: j.created_at ? new Date(j.created_at).toISOString() : now,
+        is_active: true, expires_at: expires,
+      })
+      count++
+    }
+    log.weworkremotely = count
+  } catch (e) { log.weworkremotely = 0 }
+
+  // SOURCE 8: Remote OK (free, unlimited)
+  try {
+    const res = await fetch(`https://remoteok.com/api?tag=${encodeURIComponent(query.split(" ")[0])}`, {
+      headers: { "User-Agent": "NexJob/1.0" }
+    })
+    const data = await res.json()
+    let count = 0
+    for (const j of (Array.isArray(data) ? data.filter((j: any) => j.id) : []).slice(0, 50)) {
+      if (!j.position || !j.url) continue
+      raw.push({
+        title: j.position, company: j.company || "Unknown",
+        company_logo: j.company_logo || null,
+        location: j.location || "Remote (Worldwide)",
+        work_mode: "remote", job_type: "full_time",
+        salary_min: j.salary_min || null, salary_max: j.salary_max || null,
+        source: "remoteok",
+        source_url: j.url,
+        description: j.description?.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 5000) || "",
+        external_id: `remoteok_${j.id}`,
+        posted_at: j.date ? new Date(j.date * 1000).toISOString() : now,
+        is_active: true, expires_at: expires,
+      })
+      count++
+    }
+    log.remoteok = count
+  } catch (e) { log.remoteok = 0 }
+
+  // SOURCE 9: Ashby (growing tech companies)
+  try {
+    const ashbyCompanies = ["openai","perplexity","cursor","linear","retool","loom","figma","notion","vercel","supabase","planetscale","neon","turso","fly","railway","render","clerk","resend","loops","cal","dub","trigger","inngest"]
+    const kw = query.toLowerCase()
+    let count = 0
+    for (const co of ashbyCompanies) {
+      try {
+        const res = await fetch(`https://jobs.ashbyhq.com/api/non-user-graphql`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ operationName: "ApiJobBoardWithTeams", variables: { organizationHostedJobsPageName: co }, query: "query ApiJobBoardWithTeams($organizationHostedJobsPageName: String!) { jobBoard: jobBoardWithTeams(organizationHostedJobsPageName: $organizationHostedJobsPageName) { jobPostings { id title locationName employmentType } } }" })
+        })
+        const data = await res.json()
+        for (const j of (data?.data?.jobBoard?.jobPostings || []).filter((j: any) => j.title?.toLowerCase().includes(kw)).slice(0, 5)) {
+          raw.push({
+            title: j.title, company: co.charAt(0).toUpperCase() + co.slice(1),
+            company_logo: null,
+            location: j.locationName || "Remote",
+            work_mode: j.locationName?.toLowerCase().includes("remote") ? "remote" : "onsite",
+            job_type: j.employmentType?.toLowerCase().includes("full") ? "full_time" : "contract",
+            salary_min: null, salary_max: null,
+            source: "ashby",
+            source_url: `https://jobs.ashbyhq.com/${co}/${j.id}`,
+            description: "",
+            external_id: `ashby_${j.id}`,
+            posted_at: now,
+            is_active: true, expires_at: expires,
+          })
+          count++
+        }
+      } catch (e) {}
+    }
+    log.ashby = count
+  } catch (e) { log.ashby = 0 }
+
+  // SOURCE 10: The Muse
   try {
     const res = await fetch(`https://www.themuse.com/api/public/jobs?descending=true&page=1`)
     const data = await res.json()
