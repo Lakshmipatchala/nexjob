@@ -1,399 +1,621 @@
-﻿import { NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
+﻿"use client"
+import { useEffect, useState } from "react"
+import { createClient } from "@/lib/supabase"
+import { useUIStore } from "@/store/ui.store"
+import { useRouter } from "next/navigation"
 
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url)
-  const query = searchParams.get("query") || "software engineer"
-  const country = (searchParams.get("country") || "US").toUpperCase()
+interface Job {
+  id: string
+  title: string
+  company: string
+  company_logo?: string
+  location: string
+  work_mode: string
+  job_type: string
+  salary_min?: number
+  salary_max?: number
+  source: string
+  source_url: string
+  posted_at: string
+  description?: string
+  ai_match_score?: number
+}
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SECRET_KEY!
-  )
+const COUNTRIES = [
+  { code: "US", name: "United States", flag: "" },
+  { code: "REMOTE", name: "Remote (Worldwide)", flag: "" },
+  { code: "IN", name: "India", flag: "" },
+  { code: "GB", name: "United Kingdom", flag: "" },
+  { code: "CA", name: "Canada", flag: "" },
+  { code: "AU", name: "Australia", flag: "" },
+  { code: "DE", name: "Germany", flag: "" },
+  { code: "SG", name: "Singapore", flag: "" },
+  { code: "AE", name: "UAE", flag: "" },
+  { code: "NL", name: "Netherlands", flag: "" },
+  { code: "FR", name: "France", flag: "" },
+]
 
-  // Clean jobs older than 15 days
-  await supabase.from("jobs").delete()
-    .lt("posted_at", new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString())
+const DOMAINS = [
+  "All Domains", "Software Engineering", "Data & AI", "DevOps & Cloud",
+  "QA & Testing", "Product & Design", "Cybersecurity", "Mobile Development",
+  "Frontend", "Backend", "Full Stack", "Machine Learning", "Data Science",
+  "Blockchain", "Embedded Systems", "IT Support"
+]
 
-  const countryNames: Record<string,string> = {
-    US:"United States",IN:"India",GB:"United Kingdom",CA:"Canada",
-    AU:"Australia",DE:"Germany",SG:"Singapore",AE:"UAE",
-    NL:"Netherlands",FR:"France",REMOTE:"Remote"
+const EXPERIENCE_LEVELS = [
+  { value: "all", label: "Any Level" },
+  { value: "entry", label: "Entry (0-2 yrs)" },
+  { value: "mid", label: "Mid (2-5 yrs)" },
+  { value: "senior", label: "Senior (5+ yrs)" },
+  { value: "lead", label: "Lead / Manager" },
+]
+
+const DATE_FILTERS = [
+  { value: "all", label: "Any time" },
+  { value: "1", label: "Last 24h" },
+  { value: "3", label: "Last 3 days" },
+  { value: "7", label: "Last 7 days" },
+]
+
+function timeAgo(dateStr: string): string {
+  const date = new Date(dateStr)
+  const now = new Date()
+  const diff = Math.floor((now.getTime() - date.getTime()) / 1000)
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+  return `${Math.floor(diff / 86400)}d ago`
+}
+
+function isFresh(dateStr: string): boolean {
+  return (new Date().getTime() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24) <= 1
+}
+
+const JOBS_PER_PAGE = 20
+
+export default function JobsPage() {
+  const lastJobSearch = useUIStore(s => s.lastJobSearch)
+  const setLastJobSearch = useUIStore(s => s.setLastJobSearch)
+  const setPrefilledJob = useUIStore(s => s.setPrefilledJob)
+  const router = useRouter()
+  const [userId, setUserId] = useState("")
+  const [allJobs, setAllJobs] = useState<Job[]>([])
+  const [loading, setLoading] = useState(true)
+  const [fetching, setFetching] = useState(false)
+  const [scoring, setScoring] = useState(false)
+  const [fetchQuery, setFetchQuery] = useState(lastJobSearch || "software engineer")
+  const [country, setCountry] = useState("US")
+  const [message, setMessage] = useState("")
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set())
+  const [savingId, setSavingId] = useState<string | null>(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [showFilters, setShowFilters] = useState(true)
+  // Filters
+  const [workMode, setWorkMode] = useState("all")
+  const [jobType, setJobType] = useState("all")
+  const [domain, setDomain] = useState("All Domains")
+  const [experience, setExperience] = useState("all")
+  const [dateFilter, setDateFilter] = useState("all")
+  const [salaryMin, setSalaryMin] = useState("")
+  const [titleSearch, setTitleSearch] = useState("")
+  const [sortBy, setSortBy] = useState("newest")
+
+  useEffect(() => { initUser() }, [])
+  useEffect(() => { setCurrentPage(1) }, [workMode, jobType, domain, experience, dateFilter, salaryMin, titleSearch])
+  useEffect(() => { loadJobs(userId, fetchQuery, country) }, [country])
+
+  async function initUser() {
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      setUserId(user.id)
+      loadSavedViaAPI(user.id)
+      loadJobs(user.id, "", "US")
+    } else {
+      loadJobs("", "", "US")
+    }
   }
-  const countryName = countryNames[country] || country
-  const raw: any[] = []
-  const now = new Date().toISOString()
-  const expires = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString()
-  const log: Record<string,number> = {}
 
-  // SOURCE 1: JSearch (LinkedIn Indeed Glassdoor Monster Dice Naukri Lensa)
-  if (process.env.RAPIDAPI_KEY) {
-    try {
-      const jsearchCountry = country === "REMOTE" ? "us" : country.toLowerCase()
-      const searchQuery = country === "REMOTE" ? `${query} remote` : `${query} ${countryName}`
-      let count = 0
-      for (let page = 1; page <= 5; page++) {
-        try {
-          const res = await fetch(
-            `https://jsearch.p.rapidapi.com/search?query=${encodeURIComponent(searchQuery)}&num_pages=1&page=${page}&country=${jsearchCountry}&date_posted=week`,
-            { headers: { "x-rapidapi-host": "jsearch.p.rapidapi.com", "x-rapidapi-key": process.env.RAPIDAPI_KEY } }
-          )
-          if (!res.ok) break
-          const data = await res.json()
-          const jobs = data.data || []
-          if (jobs.length === 0) break
-          for (const j of jobs) {
-            if (!j.job_title || !j.job_apply_link) continue
-            const isRemote = j.job_is_remote === true
-            const loc = j.job_city ? `${j.job_city}, ${j.job_state || j.job_country || countryName}` : isRemote ? "Remote" : countryName
-            raw.push({
-              title: j.job_title, company: j.employer_name || "Unknown",
-              company_logo: j.employer_logo || null, location: loc,
-              work_mode: isRemote ? "remote" : "onsite",
-              job_type: j.job_employment_type?.toLowerCase().includes("full") ? "full_time" : "contract",
-              salary_min: j.job_min_salary || null, salary_max: j.job_max_salary || null,
-              source: j.job_publisher?.toLowerCase().includes("linkedin") ? "linkedin"
-                : j.job_publisher?.toLowerCase().includes("indeed") ? "indeed"
-                : j.job_publisher?.toLowerCase().includes("glassdoor") ? "glassdoor"
-                : j.job_publisher?.toLowerCase().includes("dice") ? "dice"
-                : j.job_publisher?.toLowerCase().includes("monster") ? "monster"
-                : j.job_publisher?.toLowerCase().includes("zip") ? "ziprecruiter"
-                : j.job_publisher?.toLowerCase().includes("naukri") ? "naukri"
-                : j.job_publisher?.toLowerCase().includes("lensa") ? "lensa" : "other",
-              source_url: j.job_apply_link,
-              description: j.job_description?.slice(0, 5000) || "",
-              external_id: `jsearch_${j.job_id}`,
-              posted_at: j.job_posted_at_datetime_utc || now,
-              is_active: true, expires_at: expires,
-            })
-            count++
-          }
-        } catch (e) { break }
-      }
-      log.jsearch = count
-    } catch (e) { log.jsearch = 0 }
+  async function loadJobs(uid?: string, q?: string, c?: string) {
+    setLoading(true)
+    const id = uid !== undefined ? uid : userId
+    const currentCountry = c !== undefined ? c : country
+    const params = new URLSearchParams()
+    if (id) params.set("userId", id)
+    if (q && q.trim()) params.set("query", q.trim())
+    if (currentCountry) params.set("country", currentCountry)
+    const res = await fetch(`/api/jobs/list?${params.toString()}`)
+    const data = await res.json()
+    if (data.error) { setMessage(`Error: ${data.error}`); setLoading(false); return 0 }
+    setAllJobs(data.jobs || [])
+    setLoading(false)
+    return data.jobs?.length || 0
   }
 
-  // SOURCE 2: Jooble (free API - LinkedIn Indeed Monster jobs)
-  if (process.env.JOOBLE_API_KEY) {
+  async function loadSavedViaAPI(uid: string) {
     try {
-      const locationMap: Record<string,string> = {
-        US: "United States", IN: "India", GB: "United Kingdom",
-        CA: "Canada", AU: "Australia", DE: "Germany",
-        SG: "Singapore", AE: "Dubai", REMOTE: ""
-      }
-      const res = await fetch(`https://jooble.org/api/${process.env.JOOBLE_API_KEY}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          keywords: query,
-          location: locationMap[country] || "",
-          page: "1",
-          resultonpage: "100"
-        })
+      const res = await fetch(`/api/saved?userId=${uid}`)
+      const data = await res.json()
+      if (data.savedIds) setSavedIds(new Set(data.savedIds))
+    } catch (e) { console.error(e) }
+  }
+
+  async function fetchFreshJobs() {
+    if (fetching) return
+    setFetching(true)
+    setLastJobSearch(fetchQuery)
+    setMessage(`Fetching "${fetchQuery}" jobs...`)
+    try {
+      const params = new URLSearchParams({ query: fetchQuery, country })
+      const res = await fetch(`/api/jobs/fetch?${params.toString()}`)
+      const data = await res.json()
+      if (data.success) {
+        setMessage(data.message || "Done!")
+        await loadJobs(userId, fetchQuery, country)
+        setTimeout(() => setMessage(""), 5000)
+      } else setMessage(`Error: ${data.error}`)
+    } catch (e: any) { setMessage(`Error: ${e.message}`) }
+    setFetching(false)
+  }
+
+  async function scoreJobs() {
+    if (scoring || allJobs.length === 0) return
+    setScoring(true)
+    setMessage("AI scoring jobs...")
+    try {
+      const res = await fetch("/api/jobs/score", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobs: filteredJobs.slice(0, 20) })
       })
       const data = await res.json()
-      let count = 0
-      for (const j of (data.jobs || [])) {
-        if (!j.title || !j.link) continue
-        const postedDaysAgo = j.updated ? Math.floor((Date.now() - new Date(j.updated).getTime()) / (1000*60*60*24)) : 0
-        if (postedDaysAgo > 15) continue
-        raw.push({
-          title: j.title, company: j.company || "Unknown",
-          company_logo: null,
-          location: j.location || countryName,
-          work_mode: j.title?.toLowerCase().includes("remote") || j.location?.toLowerCase().includes("remote") ? "remote" : "onsite",
-          job_type: j.type?.toLowerCase().includes("full") ? "full_time" : "contract",
-          salary_min: null, salary_max: null,
-          source: "jooble",
-          source_url: j.link,
-          description: j.snippet?.slice(0, 5000) || "",
-          external_id: `jooble_${Buffer.from(j.link).toString("base64").slice(0, 20)}`,
-          posted_at: j.updated ? new Date(j.updated).toISOString() : now,
-          is_active: true, expires_at: expires,
-        })
-        count++
+      if (data.scores) {
+        setAllJobs(prev => prev.map(j => ({ ...j, ai_match_score: data.scores[j.id] ?? j.ai_match_score })))
+        setMessage("AI scores updated!")
+        setTimeout(() => setMessage(""), 3000)
       }
-      log.jooble = count
-    } catch (e) { log.jooble = 0 }
+    } catch { setMessage("Scoring failed") }
+    setScoring(false)
   }
 
-  // SOURCE 3: Remotive (free unlimited remote)
-  try {
-    const res = await fetch(`https://remotive.com/api/remote-jobs?search=${encodeURIComponent(query)}&limit=100`)
-    const data = await res.json()
-    let count = 0
-    for (const j of (data.jobs || [])) {
-      if (!j.title || !j.url) continue
-      raw.push({
-        title: j.title, company: j.company_name || "Unknown",
-        company_logo: j.company_logo || null,
-        location: j.candidate_required_location || "Remote (Worldwide)",
-        work_mode: "remote", job_type: "full_time",
-        salary_min: null, salary_max: null, source: "remotive",
-        source_url: j.url,
-        description: j.description?.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 5000) || "",
-        external_id: `remotive_${j.id}`,
-        posted_at: j.publication_date ? new Date(j.publication_date).toISOString() : now,
-        is_active: true, expires_at: expires,
-      })
-      count++
-    }
-    log.remotive = count
-  } catch (e) { log.remotive = 0 }
-
-  // SOURCE 4: Jobicy (free remote jobs)
-  try {
-    const res = await fetch(`https://jobicy.com/api/v2/remote-jobs?count=100&tag=${encodeURIComponent(query.split(" ")[0].toLowerCase())}`)
-    const data = await res.json()
-    let count = 0
-    for (const j of (data.jobs || [])) {
-      if (!j.jobTitle || !j.url) continue
-      raw.push({
-        title: j.jobTitle, company: j.companyName || "Unknown",
-        company_logo: j.companyLogo || null,
-        location: j.jobGeo || "Remote (Worldwide)",
-        work_mode: "remote",
-        job_type: j.jobType?.toLowerCase().includes("full") ? "full_time" : "contract",
-        salary_min: null, salary_max: null, source: "jobicy",
-        source_url: j.url,
-        description: j.jobExcerpt?.slice(0, 5000) || "",
-        external_id: `jobicy_${j.id}`,
-        posted_at: j.pubDate ? new Date(j.pubDate).toISOString() : now,
-        is_active: true, expires_at: expires,
-      })
-      count++
-    }
-    log.jobicy = count
-  } catch (e) { log.jobicy = 0 }
-
-  // SOURCE 5: Himalayas (free unlimited - remote jobs)
-  try {
-    const res = await fetch(`https://himalayas.app/jobs/api?q=${encodeURIComponent(query)}&limit=100`)
-    const data = await res.json()
-    let count = 0
-    for (const j of (data.jobs || [])) {
-      if (!j.title || !j.applicationLink) continue
-      raw.push({
-        title: j.title, company: j.companyName || "Unknown",
-        company_logo: j.companyLogo || null,
-        location: j.locationRestrictions?.[0] || "Remote (Worldwide)",
-        work_mode: "remote",
-        job_type: j.jobType?.toLowerCase().includes("full") ? "full_time" : "contract",
-        salary_min: j.salaryMin || null, salary_max: j.salaryMax || null,
-        source: "himalayas", source_url: j.applicationLink,
-        description: j.description?.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 5000) || "",
-        external_id: `himalayas_${j.id}`,
-        posted_at: j.createdAt ? new Date(j.createdAt).toISOString() : now,
-        is_active: true, expires_at: expires,
-      })
-      count++
-    }
-    log.himalayas = count
-  } catch (e) { log.himalayas = 0 }
-
-  // SOURCE 6: Greenhouse (direct company boards - free unlimited)
-  try {
-    const companies = [
-      "stripe","anthropic","databricks","snowflake","confluent","mongodb",
-      "elastic","cloudflare","datadog","github","gitlab","twilio","figma",
-      "notion","vercel","brex","plaid","rippling","airtable","canva",
-      "clickup","miro","loom","deel","hashicorp","linear","retool",
-      "benchling","coinbase","robinhood","chime","gusto","lattice",
-      "intercom","zendesk","hubspot","asana","dropbox","okta",
-      "airbnb","doordash","ramp","scale","cohere","replit","mercury",
-      "openai","perplexity","salesforce","servicenow","workday",
-      "nvidia","tesla","palantir","anduril","duolingo","pinterest",
-      "snap","reddit","discord","shopify","square","affirm"
-    ]
-    const kw = query.toLowerCase()
-    let count = 0
-    for (const co of companies) {
-      try {
-        const res = await fetch(`https://boards-api.greenhouse.io/v1/boards/${co}/jobs?content=true`)
-        const data = await res.json()
-        for (const j of (data.jobs || []).filter((j: any) => j.title?.toLowerCase().includes(kw)).slice(0, 5)) {
-          if (!j.title || !j.absolute_url) continue
-          const loc = j.location?.name || "Remote"
-          raw.push({
-            title: j.title, company: co.charAt(0).toUpperCase() + co.slice(1),
-            company_logo: null, location: loc,
-            work_mode: loc.toLowerCase().includes("remote") ? "remote" : "onsite",
-            job_type: "full_time", salary_min: null, salary_max: null,
-            source: "greenhouse", source_url: j.absolute_url,
-            description: j.content?.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 5000) || "",
-            external_id: `greenhouse_${j.id}`,
-            posted_at: now,
-            is_active: true, expires_at: expires,
-          })
-          count++
-        }
-      } catch (e) {}
-    }
-    log.greenhouse = count
-  } catch (e) { log.greenhouse = 0 }
-
-  // SOURCE 7: Lever (direct company boards)
-  try {
-    const companies = [
-      "netflix","reddit","duolingo","carta","scale","intercom",
-      "brex","gusto","lattice","mercury","figma","linear",
-      "replit","dbt-labs","retool","watershed","clerk","loops",
-      "resend","trigger","fly","render","neon","planetscale"
-    ]
-    const kw = query.toLowerCase()
-    let count = 0
-    for (const co of companies) {
-      try {
-        const res = await fetch(`https://api.lever.co/v0/postings/${co}?mode=json&limit=50`)
-        const jobs = await res.json()
-        for (const j of (Array.isArray(jobs) ? jobs : []).filter((j: any) => j.text?.toLowerCase().includes(kw)).slice(0, 5)) {
-          if (!j.text || !j.hostedUrl) continue
-          const loc = j.categories?.location || "Remote"
-          raw.push({
-            title: j.text, company: co.charAt(0).toUpperCase() + co.slice(1),
-            company_logo: null, location: loc,
-            work_mode: loc.toLowerCase().includes("remote") ? "remote" : "onsite",
-            job_type: "full_time", salary_min: null, salary_max: null,
-            source: "lever", source_url: j.hostedUrl,
-            description: j.descriptionPlain?.slice(0, 5000) || "",
-            external_id: `lever_${j.id}`,
-            posted_at: now,
-            is_active: true, expires_at: expires,
-          })
-          count++
-        }
-      } catch (e) {}
-    }
-    log.lever = count
-  } catch (e) { log.lever = 0 }
-
-  // SOURCE 8: Ashby (growing tech companies)
-  try {
-    const companies = [
-      "openai","perplexity","cursor","linear","retool","loom","figma",
-      "notion","vercel","supabase","neon","fly","railway","render",
-      "clerk","resend","loops","cal","dub","trigger","inngest",
-      "mistral","cohere","together","replicate","huggingface",
-      "modal","scale","labelbox","weights-biases","neptune",
-      "hex","deepnote","streamlit","airbyte","fivetran","dagster"
-    ]
-    const kw = query.toLowerCase()
-    let count = 0
-    for (const co of companies) {
-      try {
-        const res = await fetch(`https://jobs.ashbyhq.com/api/non-user-graphql`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            operationName: "ApiJobBoardWithTeams",
-            variables: { organizationHostedJobsPageName: co },
-            query: "query ApiJobBoardWithTeams($organizationHostedJobsPageName: String!) { jobBoard: jobBoardWithTeams(organizationHostedJobsPageName: $organizationHostedJobsPageName) { jobPostings { id title locationName employmentType } } }"
-          })
-        })
-        const data = await res.json()
-        for (const j of (data?.data?.jobBoard?.jobPostings || []).filter((j: any) => j.title?.toLowerCase().includes(kw)).slice(0, 5)) {
-          raw.push({
-            title: j.title, company: co.charAt(0).toUpperCase() + co.slice(1),
-            company_logo: null,
-            location: j.locationName || "Remote",
-            work_mode: j.locationName?.toLowerCase().includes("remote") ? "remote" : "onsite",
-            job_type: j.employmentType?.toLowerCase().includes("full") ? "full_time" : "contract",
-            salary_min: null, salary_max: null,
-            source: "ashby",
-            source_url: `https://jobs.ashbyhq.com/${co}/${j.id}`,
-            description: "",
-            external_id: `ashby_${j.id}`,
-            posted_at: now,
-            is_active: true, expires_at: expires,
-          })
-          count++
-        }
-      } catch (e) {}
-    }
-    log.ashby = count
-  } catch (e) { log.ashby = 0 }
-
-  // SOURCE 9: Adzuna (multi-country)
-  if (process.env.ADZUNA_APP_ID && process.env.ADZUNA_APP_KEY) {
+  async function toggleSave(job: Job) {
+    if (!userId) return
+    setSavingId(job.id)
     try {
-      const ac = ({"US":"us","IN":"in","GB":"gb","CA":"ca","AU":"au","DE":"de","SG":"sg","AE":"ae","NL":"nl","FR":"fr","REMOTE":"us"} as Record<string,string>)[country] || "us"
-      let count = 0
-      for (let page = 1; page <= 3; page++) {
-        try {
-          const res = await fetch(`https://api.adzuna.com/v1/api/jobs/${ac}/search/${page}?app_id=${process.env.ADZUNA_APP_ID}&app_key=${process.env.ADZUNA_APP_KEY}&what=${encodeURIComponent(query)}&results_per_page=50&max_days_old=15`)
-          const data = await res.json()
-          const jobs = data.results || []
-          if (jobs.length === 0) break
-          for (const j of jobs) {
-            if (!j.title || !j.redirect_url) continue
-            const loc = j.location?.display_name || countryName
-            raw.push({
-              title: j.title, company: j.company?.display_name || "Unknown",
-              company_logo: null, location: loc,
-              work_mode: loc.toLowerCase().includes("remote") || j.title?.toLowerCase().includes("remote") ? "remote" : "onsite",
-              job_type: j.contract_time === "full_time" ? "full_time" : "contract",
-              salary_min: j.salary_min || null, salary_max: j.salary_max || null,
-              source: "adzuna", source_url: j.redirect_url,
-              description: j.description?.slice(0, 5000) || "",
-              external_id: `adzuna_${j.id}`,
-              posted_at: j.created ? new Date(j.created).toISOString() : now,
-              is_active: true, expires_at: expires,
-            })
-            count++
-          }
-        } catch (e) { break }
+      if (savedIds.has(job.id)) {
+        await fetch("/api/saved", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId, jobId: job.id }) })
+        setSavedIds(prev => { const n = new Set(prev); n.delete(job.id); return n })
+      } else {
+        await fetch("/api/saved", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId, jobId: job.id, jobData: job }) })
+        setSavedIds(prev => new Set([...prev, job.id]))
+        setMessage("Saved!"); setTimeout(() => setMessage(""), 2000)
       }
-      log.adzuna = count
-    } catch (e) { log.adzuna = 0 }
+    } catch (e) { console.error(e) }
+    setSavingId(null)
   }
 
-  // SOURCE 10: TheMuse (free)
-  try {
-    const res = await fetch(`https://www.themuse.com/api/public/jobs?descending=true&page=1`)
-    const data = await res.json()
-    const kw = query.toLowerCase()
-    let count = 0
-    for (const j of (data.results || []).filter((j: any) => j.name?.toLowerCase().includes(kw)).slice(0, 20)) {
-      if (!j.name || !j.refs?.landing_page) continue
-      const loc = j.locations?.[0]?.name || "Remote"
-      raw.push({
-        title: j.name, company: j.company?.name || "Unknown",
-        company_logo: null, location: loc,
-        work_mode: loc.toLowerCase().includes("remote") || loc.toLowerCase().includes("flexible") ? "remote" : "onsite",
-        job_type: "full_time", salary_min: null, salary_max: null,
-        source: "themuse", source_url: j.refs.landing_page,
-        description: j.contents?.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 5000) || "",
-        external_id: `themuse_${j.id}`,
-        posted_at: now,
-        is_active: true, expires_at: expires,
-      })
-      count++
+  function sendToResume(job: Job) {
+    setPrefilledJob({ jobTitle: job.title, company: job.company, jobDescription: job.description || "" })
+    router.push("/dashboard/resume")
+  }
+
+  function oneClickApply(job: Job) {
+    const params = new URLSearchParams({ jobId: job.id, title: job.title, company: job.company, url: job.source_url || "", source: job.source, description: (job.description || "").slice(0, 500) })
+    router.push(`/dashboard/apply?${params.toString()}`)
+  }
+
+  async function applyAndTrack(job: Job) {
+    window.open(job.source_url, "_blank")
+    if (!userId) return
+    await fetch("/api/applications", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId, jobId: job.id, jobData: job, status: "applied" }) })
+    setAllJobs(prev => prev.filter(j => j.id !== job.id))
+    setMessage("Applied!"); setTimeout(() => setMessage(""), 3000)
+  }
+
+  function matchesDomain(title: string): boolean {
+    if (domain === "All Domains") return true
+    const t = title.toLowerCase()
+    const map: Record<string, string[]> = {
+      "Software Engineering": ["software","engineer","developer","swe","sde"],
+      "Data & AI": ["data","ai","analytics","etl","warehouse","pipeline","spark","kafka","databricks","snowflake","dbt"],
+      "DevOps & Cloud": ["devops","cloud","aws","azure","gcp","kubernetes","docker","terraform","sre","platform","infrastructure"],
+      "QA & Testing": ["qa","quality","test","sdet","automation","selenium"],
+      "Product & Design": ["product","design","ux","ui","designer","manager"],
+      "Cybersecurity": ["security","cyber","infosec","penetration","soc","vulnerability"],
+      "Mobile Development": ["mobile","ios","android","react native","flutter","swift","kotlin"],
+      "Frontend": ["frontend","front-end","react","angular","vue","nextjs","typescript","javascript","css","html"],
+      "Backend": ["backend","back-end","java","python","nodejs","golang","ruby","scala","php","rust","c++"],
+      "Full Stack": ["full stack","fullstack","full-stack","mern","mean"],
+      "Machine Learning": ["machine learning","ml","deep learning","nlp","computer vision","llm","ai engineer"],
+      "Data Science": ["data scientist","data science","statistics","research scientist","applied scientist"],
+      "Blockchain": ["blockchain","web3","smart contract","solidity","crypto","defi"],
+      "Embedded Systems": ["embedded","firmware","iot","fpga","rtos","hardware"],
+      "IT Support": ["support","helpdesk","it admin","sysadmin","network","systems admin"],
     }
-    log.themuse = count
-  } catch (e) { log.themuse = 0 }
-
-  // Deduplicate
-  const seen = new Set<string>()
-  const unique = raw.filter(j => {
-    if (!j.external_id || seen.has(j.external_id)) return false
-    seen.add(j.external_id)
-    return true
-  })
-
-  // Save
-  let saved = 0
-  for (let i = 0; i < unique.length; i += 50) {
-    const { error } = await supabase
-      .from("jobs")
-      .upsert(unique.slice(i, i + 50), { onConflict: "external_id", ignoreDuplicates: false })
-    if (!error) saved += Math.min(50, unique.length - i)
+    return (map[domain] || []).some(k => t.includes(k))
   }
 
-  return NextResponse.json({
-    success: true, saved,
-    total_found: unique.length,
-    sources: log, query, country,
-    message: `Fetched ${saved} jobs for "${query}" from ${Object.keys(log).length} sources. Details: ${JSON.stringify(log)}`
+  function matchesExperience(title: string): boolean {
+    if (experience === "all") return true
+    const t = title.toLowerCase()
+    if (experience === "entry") return t.includes("junior") || t.includes("entry") || t.includes("associate") || t.includes("graduate") || t.includes("intern")
+    if (experience === "mid") return !t.includes("senior") && !t.includes("staff") && !t.includes("principal") && !t.includes("lead") && !t.includes("manager") && !t.includes("director") && !t.includes("junior") && !t.includes("intern")
+    if (experience === "senior") return t.includes("senior") || t.includes("sr.") || t.includes("staff")
+    if (experience === "lead") return t.includes("lead") || t.includes("manager") || t.includes("principal") || t.includes("director") || t.includes("head of") || t.includes("vp")
+    return true
+  }
+
+  const COUNTRY_KEYWORDS: Record<string,string[]> = {
+    US: ["united states","usa",", us",", al",", ak",", az",", ar",", ca",", co",", ct",", de",", fl",", ga",", hi",", id",", il",", in",", ia",", ks",", ky",", la",", me",", md",", ma",", mi",", mn",", ms",", mo",", mt",", ne",", nv",", nh",", nj",", nm",", ny",", nc",", nd",", oh",", ok",", or",", pa",", ri",", sc",", sd",", tn",", tx",", ut",", vt",", va",", wa",", wv",", wi",", wy",", dc","new york","san francisco","los angeles","chicago","seattle","boston","austin","denver","atlanta","dallas","houston","phoenix","philadelphia","san diego","portland","miami","remote"],
+    IN: ["india","bengaluru","bangalore","mumbai","delhi","hyderabad","pune","chennai","gurugram","noida","remote"],
+    GB: ["united kingdom","uk","london","manchester","birmingham","edinburgh","remote"],
+    CA: ["canada","toronto","vancouver","montreal","ottawa","remote"],
+    AU: ["australia","sydney","melbourne","brisbane","perth","remote"],
+    DE: ["germany","berlin","munich","frankfurt","hamburg","remote"],
+    SG: ["singapore","remote"],
+    AE: ["uae","dubai","abu dhabi","remote"],
+    NL: ["netherlands","amsterdam","remote"],
+    FR: ["france","paris","lyon","remote"],
+    REMOTE: ["remote","worldwide","anywhere","global"],
+  }
+
+  const filteredJobs = allJobs.filter(j => {
+    // Country filter - strict client-side filtering
+    if (country !== "REMOTE") {
+      const loc = (j.location || "").toLowerCase()
+      const isRemote = j.work_mode === "remote" || loc.includes("remote")
+      if (!isRemote) {
+        const keywords = COUNTRY_KEYWORDS[country] || []
+        const matchesCountry = keywords.some(k => loc.includes(k))
+        if (!matchesCountry) return false
+      }
+    } else {
+      if (j.work_mode !== "remote") return false
+    }
+    if (workMode !== "all" && j.work_mode !== workMode) return false
+    if (jobType !== "all" && j.job_type !== jobType) return false
+    if (!matchesDomain(j.title)) return false
+    if (!matchesExperience(j.title)) return false
+    if (dateFilter !== "all") {
+      const days = parseInt(dateFilter)
+      const posted = new Date(j.posted_at)
+      const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+      if (posted < cutoff) return false
+    }
+    if (salaryMin && j.salary_min && j.salary_min < parseInt(salaryMin) * 1000) return false
+    if (titleSearch && !j.title.toLowerCase().includes(titleSearch.toLowerCase()) && !j.company.toLowerCase().includes(titleSearch.toLowerCase())) return false
+    return true
+  }).sort((a, b) => {
+    if (sortBy === "newest") return new Date(b.posted_at).getTime() - new Date(a.posted_at).getTime()
+    if (sortBy === "oldest") return new Date(a.posted_at).getTime() - new Date(b.posted_at).getTime()
+    if (sortBy === "match") return (b.ai_match_score || 0) - (a.ai_match_score || 0)
+    if (sortBy === "salary") return (b.salary_min || 0) - (a.salary_min || 0)
+    if (sortBy === "company") return a.company.localeCompare(b.company)
+    return 0
   })
+
+  const totalPages = Math.ceil(filteredJobs.length / JOBS_PER_PAGE)
+  const paginatedJobs = filteredJobs.slice((currentPage - 1) * JOBS_PER_PAGE, currentPage * JOBS_PER_PAGE)
+
+  const activeFilters = [
+    workMode !== "all" && workMode,
+    jobType !== "all" && jobType.replace("_"," "),
+    domain !== "All Domains" && domain,
+    experience !== "all" && EXPERIENCE_LEVELS.find(e=>e.value===experience)?.label,
+    dateFilter !== "all" && DATE_FILTERS.find(d=>d.value===dateFilter)?.label,
+    salaryMin && `$${salaryMin}k+`,
+  ].filter(Boolean) as string[]
+
+  function clearFilters() {
+    setWorkMode("all"); setJobType("all"); setDomain("All Domains")
+    setExperience("all"); setDateFilter("all"); setSalaryMin("")
+    setTitleSearch(""); setSortBy("newest")
+  }
+
+  const badge = (text: string, color: string, bg: string) => ({
+    display: "inline-block" as const, fontSize: "11px", padding: "3px 8px",
+    borderRadius: "20px", marginRight: "5px", background: bg, color, fontWeight: "500" as const
+  })
+
+  const srcColor: Record<string, { color: string, bg: string }> = {
+    linkedin:        { color: "#60a5fa", bg: "rgba(96,165,250,0.12)" },
+    indeed:          { color: "#fbbf24", bg: "rgba(251,191,36,0.12)" },
+    glassdoor:       { color: "#4ade80", bg: "rgba(74,222,128,0.12)" },
+    remotive:        { color: "#f472b6", bg: "rgba(244,114,182,0.12)" },
+    adzuna:          { color: "#fb923c", bg: "rgba(251,146,60,0.12)" },
+    dice:            { color: "#a78bfa", bg: "rgba(167,139,250,0.12)" },
+    greenhouse:      { color: "#34d399", bg: "rgba(52,211,153,0.12)" },
+    lever:           { color: "#f87171", bg: "rgba(248,113,113,0.12)" },
+    jobicy:          { color: "#60a5fa", bg: "rgba(96,165,250,0.12)" },
+    monster:         { color: "#fb923c", bg: "rgba(251,146,60,0.12)" },
+    naukri:          { color: "#fbbf24", bg: "rgba(251,191,36,0.12)" },
+    ashby:           { color: "#818cf8", bg: "rgba(129,140,248,0.12)" },
+    workable:        { color: "#38bdf8", bg: "rgba(56,189,248,0.12)" },
+    smartrecruiters: { color: "#fb923c", bg: "rgba(251,146,60,0.12)" },
+    bamboohr:        { color: "#4ade80", bg: "rgba(74,222,128,0.12)" },
+    jobvite:         { color: "#f472b6", bg: "rgba(244,114,182,0.12)" },
+    bayt:            { color: "#fbbf24", bg: "rgba(251,191,36,0.12)" },
+    gulftalent:      { color: "#fb923c", bg: "rgba(251,146,60,0.12)" },
+    shine:           { color: "#a78bfa", bg: "rgba(167,139,250,0.12)" },
+    eures:           { color: "#60a5fa", bg: "rgba(96,165,250,0.12)" },
+    jobsdb:          { color: "#34d399", bg: "rgba(52,211,153,0.12)" },
+    hackernews:      { color: "#fb923c", bg: "rgba(251,146,60,0.12)" },
+    contra:          { color: "#f472b6", bg: "rgba(244,114,182,0.12)" },
+    arbeitnow:       { color: "#38bdf8", bg: "rgba(56,189,248,0.12)" },
+    findwork:        { color: "#818cf8", bg: "rgba(129,140,248,0.12)" },
+    guru:            { color: "#fbbf24", bg: "rgba(251,191,36,0.12)" },
+    authenticjobs:   { color: "#4ade80", bg: "rgba(74,222,128,0.12)" },
+    jooble:          { color: "#f87171", bg: "rgba(248,113,113,0.12)" },
+    remoteok:        { color: "#4ade80", bg: "rgba(74,222,128,0.12)" },
+    himalayas:       { color: "#818cf8", bg: "rgba(129,140,248,0.12)" },
+    wellfound:       { color: "#38bdf8", bg: "rgba(56,189,248,0.12)" },
+    usajobs:         { color: "#60a5fa", bg: "rgba(96,165,250,0.12)" },
+    other:           { color: "#94a3b8", bg: "rgba(148,163,184,0.12)" },
+  }
+
+  const pageBtn = (active: boolean, disabled?: boolean) => ({
+    padding: "6px 12px", borderRadius: "8px",
+    border: active ? "none" : "1px solid hsl(228 20% 20%)",
+    background: active ? "#7c6ff0" : "transparent",
+    color: active ? "white" : disabled ? "hsl(220 15% 30%)" : "hsl(220 15% 60%)",
+    fontSize: "13px", fontWeight: "600" as const,
+    cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1
+  })
+
+  const sel = (val: string, options: {value:string,label:string}[], setter: (v:string)=>void) => (
+    <select value={val} onChange={e=>setter(e.target.value)}
+      style={{ background: "hsl(228 25% 10%)", border: "1px solid hsl(228 20% 18%)", borderRadius: "8px", padding: "7px 10px", color: "white", fontSize: "12px", outline: "none", cursor: "pointer", width: "100%" }}>
+      {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+    </select>
+  )
+
+  return (
+    <div style={{ minHeight: "100vh", background: "hsl(224 71% 4%)", display: "flex", gap: "0" }}>
+
+      {/* LEFT FILTER PANEL */}
+      {showFilters && (
+        <div style={{ width: "260px", minWidth: "260px", background: "hsl(228 25% 7%)", borderRight: "1px solid hsl(228 20% 13%)", padding: "20px 16px", overflowY: "auto" as const, height: "100vh", position: "sticky" as const, top: 0 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+            <span style={{ fontSize: "14px", fontWeight: "700", color: "white" }}> Refine Results</span>
+            {activeFilters.length > 0 && (
+              <button onClick={clearFilters} style={{ background: "rgba(248,113,113,0.15)", color: "#f87171", border: "none", borderRadius: "6px", padding: "3px 8px", fontSize: "11px", cursor: "pointer" }}>
+                Clear all
+              </button>
+            )}
+          </div>
+
+          {/* Active filters */}
+          {activeFilters.length > 0 && (
+            <div style={{ marginBottom: "16px", display: "flex", flexWrap: "wrap" as const, gap: "4px" }}>
+              {activeFilters.map(f => (
+                <span key={f} style={{ background: "rgba(124,111,240,0.2)", color: "#9b8ff4", fontSize: "11px", padding: "2px 8px", borderRadius: "20px", border: "1px solid rgba(124,111,240,0.3)" }}>
+                  {f}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Country */}
+          <div style={{ marginBottom: "14px" }}>
+            <label style={{ fontSize: "11px", fontWeight: "600", color: "hsl(220 15% 45%)", textTransform: "uppercase" as const, letterSpacing: "0.5px", display: "block", marginBottom: "6px" }}> Country / Region</label>
+            <select value={country} onChange={e=>setCountry(e.target.value)}
+              style={{ background: "hsl(228 25% 10%)", border: "1px solid hsl(228 20% 18%)", borderRadius: "8px", padding: "7px 10px", color: "white", fontSize: "12px", outline: "none", cursor: "pointer", width: "100%" }}>
+              {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.flag} {c.name}</option>)}
+            </select>
+          </div>
+
+          {/* Domain */}
+          <div style={{ marginBottom: "14px" }}>
+            <label style={{ fontSize: "11px", fontWeight: "600", color: "hsl(220 15% 45%)", textTransform: "uppercase" as const, letterSpacing: "0.5px", display: "block", marginBottom: "6px" }}> Domain</label>
+            <select value={domain} onChange={e=>setDomain(e.target.value)}
+              style={{ background: "hsl(228 25% 10%)", border: "1px solid hsl(228 20% 18%)", borderRadius: "8px", padding: "7px 10px", color: "white", fontSize: "12px", outline: "none", cursor: "pointer", width: "100%" }}>
+              {DOMAINS.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </div>
+
+          {/* Experience */}
+          <div style={{ marginBottom: "14px" }}>
+            <label style={{ fontSize: "11px", fontWeight: "600", color: "hsl(220 15% 45%)", textTransform: "uppercase" as const, letterSpacing: "0.5px", display: "block", marginBottom: "6px" }}> Experience</label>
+            {sel(experience, EXPERIENCE_LEVELS, setExperience)}
+          </div>
+
+          {/* Work mode */}
+          <div style={{ marginBottom: "14px" }}>
+            <label style={{ fontSize: "11px", fontWeight: "600", color: "hsl(220 15% 45%)", textTransform: "uppercase" as const, letterSpacing: "0.5px", display: "block", marginBottom: "6px" }}> Work Mode</label>
+            <div style={{ display: "flex", flexDirection: "column" as const, gap: "4px" }}>
+              {[["all","All Modes"],["remote","Remote"],["hybrid","Hybrid"],["onsite","Onsite"]].map(([v,l]) => (
+                <button key={v} onClick={()=>setWorkMode(v)}
+                  style={{ textAlign: "left" as const, padding: "7px 10px", borderRadius: "7px", border: workMode===v ? "1px solid rgba(124,111,240,0.4)" : "1px solid transparent", background: workMode===v ? "rgba(124,111,240,0.15)" : "transparent", color: workMode===v ? "#9b8ff4" : "hsl(220 15% 60%)", fontSize: "12px", cursor: "pointer", fontWeight: workMode===v ? "600" : "400" as const }}>
+                  {workMode===v ? "â— " : "â—‹ "}{l}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Job type */}
+          <div style={{ marginBottom: "14px" }}>
+            <label style={{ fontSize: "11px", fontWeight: "600", color: "hsl(220 15% 45%)", textTransform: "uppercase" as const, letterSpacing: "0.5px", display: "block", marginBottom: "6px" }}> Job Type</label>
+            <div style={{ display: "flex", flexDirection: "column" as const, gap: "4px" }}>
+              {[["all","All Types"],["full_time","Full Time"],["contract","Contract"],["part_time","Part Time"]].map(([v,l]) => (
+                <button key={v} onClick={()=>setJobType(v)}
+                  style={{ textAlign: "left" as const, padding: "7px 10px", borderRadius: "7px", border: jobType===v ? "1px solid rgba(124,111,240,0.4)" : "1px solid transparent", background: jobType===v ? "rgba(124,111,240,0.15)" : "transparent", color: jobType===v ? "#9b8ff4" : "hsl(220 15% 60%)", fontSize: "12px", cursor: "pointer", fontWeight: jobType===v ? "600" : "400" as const }}>
+                  {jobType===v ? "â— " : "â—‹ "}{l}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Date posted */}
+          <div style={{ marginBottom: "14px" }}>
+            <label style={{ fontSize: "11px", fontWeight: "600", color: "hsl(220 15% 45%)", textTransform: "uppercase" as const, letterSpacing: "0.5px", display: "block", marginBottom: "6px" }}> Date Posted</label>
+            {sel(dateFilter, DATE_FILTERS, setDateFilter)}
+          </div>
+
+          {/* Salary */}
+          <div style={{ marginBottom: "14px" }}>
+            <label style={{ fontSize: "11px", fontWeight: "600", color: "hsl(220 15% 45%)", textTransform: "uppercase" as const, letterSpacing: "0.5px", display: "block", marginBottom: "6px" }}> Min Salary (USD)</label>
+            <select value={salaryMin} onChange={e=>setSalaryMin(e.target.value)}
+              style={{ background: "hsl(228 25% 10%)", border: "1px solid hsl(228 20% 18%)", borderRadius: "8px", padding: "7px 10px", color: "white", fontSize: "12px", outline: "none", cursor: "pointer", width: "100%" }}>
+              <option value="">No minimum</option>
+              <option value="50">$50k+</option>
+              <option value="80">$80k+</option>
+              <option value="100">$100k+</option>
+              <option value="120">$120k+</option>
+              <option value="150">$150k+</option>
+              <option value="200">$200k+</option>
+            </select>
+          </div>
+
+          {/* Sort */}
+          <div style={{ marginBottom: "14px" }}>
+            <label style={{ fontSize: "11px", fontWeight: "600", color: "hsl(220 15% 45%)", textTransform: "uppercase" as const, letterSpacing: "0.5px", display: "block", marginBottom: "6px" }}> Sort By</label>
+            <select value={sortBy} onChange={e=>setSortBy(e.target.value)}
+              style={{ background: "hsl(228 25% 10%)", border: "1px solid hsl(228 20% 18%)", borderRadius: "8px", padding: "7px 10px", color: "white", fontSize: "12px", outline: "none", cursor: "pointer", width: "100%" }}>
+              <option value="newest">Newest First</option>
+              <option value="oldest">Oldest First</option>
+              <option value="match">AI Match Score</option>
+              <option value="salary">Highest Salary</option>
+              <option value="company">Company A-Z</option>
+            </select>
+          </div>
+
+          {/* Stats */}
+          <div style={{ marginTop: "20px", padding: "12px", background: "hsl(228 25% 10%)", borderRadius: "8px", fontSize: "12px", color: "hsl(220 15% 50%)", textAlign: "center" as const }}>
+            <div style={{ fontSize: "20px", fontWeight: "700", color: "white" }}>{filteredJobs.length}</div>
+            <div>jobs match your filters</div>
+            <div style={{ fontSize: "11px", marginTop: "4px" }}>{allJobs.length} total in database</div>
+          </div>
+        </div>
+      )}
+
+      {/* MAIN CONTENT */}
+      <div style={{ flex: 1, minWidth: 0, padding: "24px 24px" }}>
+
+        {/* Top bar */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px", flexWrap: "wrap" as const, gap: "10px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <button onClick={()=>setShowFilters(!showFilters)}
+              style={{ background: showFilters ? "rgba(124,111,240,0.15)" : "hsl(228 25% 10%)", border: showFilters ? "1px solid rgba(124,111,240,0.3)" : "1px solid hsl(228 20% 18%)", borderRadius: "8px", padding: "7px 12px", color: showFilters ? "#9b8ff4" : "hsl(220 15% 60%)", fontSize: "12px", cursor: "pointer", fontWeight: "600" as const }}>
+               {showFilters ? "Hide" : "Show"} Filters
+            </button>
+            <div>
+              <h1 style={{ fontSize: "20px", fontWeight: "700", color: "white", margin: 0 }}>Browse Jobs</h1>
+              <p style={{ color: "hsl(220 15% 50%)", fontSize: "12px", margin: 0 }}>
+                Showing {filteredJobs.length} of {allJobs.length} jobs
+                {activeFilters.length > 0 && <span style={{ color: "#9b8ff4" }}> Â· {activeFilters.length} filter{activeFilters.length>1?"s":""} active</span>}
+              </p>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" as const }}>
+            <input value={fetchQuery} onChange={e=>setFetchQuery(e.target.value)} onKeyDown={e=>e.key==="Enter"&&fetchFreshJobs()}
+              placeholder="Search role..."
+              style={{ background: "hsl(228 25% 10%)", border: "1px solid hsl(228 20% 18%)", borderRadius: "8px", padding: "7px 12px", color: "white", fontSize: "13px", outline: "none", width: "160px" }} />
+            <button onClick={fetchFreshJobs} disabled={fetching}
+              style={{ background: fetching?"hsl(228 20% 14%)":"linear-gradient(135deg,#7c6ff0,#a78bfa)", color: "white", padding: "7px 16px", borderRadius: "8px", fontSize: "13px", fontWeight: "600", border: "none", cursor: fetching?"not-allowed":"pointer", opacity: fetching?0.7:1, whiteSpace: "nowrap" as const }}>
+              {fetching?" Fetching...":" Fetch Jobs"}
+            </button>
+            <button onClick={scoreJobs} disabled={scoring||allJobs.length===0}
+              style={{ background: "rgba(124,111,240,0.12)", color: "#9b8ff4", padding: "7px 14px", borderRadius: "8px", fontSize: "13px", fontWeight: "600", border: "1px solid rgba(124,111,240,0.25)", cursor: scoring?"not-allowed":"pointer", opacity: scoring?0.7:1, whiteSpace: "nowrap" as const }}>
+              {scoring?"":""} AI Match
+            </button>
+            <button onClick={()=>loadJobs(userId,"",country)}
+              style={{ background: "transparent", color: "hsl(220 15% 55%)", padding: "7px 12px", borderRadius: "8px", fontSize: "13px", border: "1px solid hsl(228 20% 18%)", cursor: "pointer" }}>
+              â†º
+            </button>
+          </div>
+        </div>
+
+        {/* Title search */}
+        <div style={{ marginBottom: "14px" }}>
+          <input value={titleSearch} onChange={e=>setTitleSearch(e.target.value)}
+            placeholder="Filter by title or company..."
+            style={{ width: "100%", background: "hsl(228 25% 8%)", border: "1px solid hsl(228 20% 15%)", borderRadius: "8px", padding: "9px 14px", color: "white", fontSize: "13px", outline: "none", boxSizing: "border-box" as const }} />
+        </div>
+
+        {message && (
+          <div style={{ padding: "10px 14px", background: message.startsWith("Error")?"rgba(239,68,68,0.1)":"rgba(34,197,94,0.1)", border: `1px solid ${message.startsWith("Error")?"rgba(239,68,68,0.3)":"rgba(34,197,94,0.3)"}`, borderRadius: "8px", color: message.startsWith("Error")?"#f87171":"#4ade80", fontSize: "13px", marginBottom: "14px" }}>
+            {message}
+          </div>
+        )}
+
+        {loading ? (
+          <div style={{ textAlign: "center" as const, padding: "64px", color: "hsl(220 15% 45%)" }}>
+            <div style={{ fontSize: "32px", marginBottom: "12px" }}></div>Loading...
+          </div>
+        ) : paginatedJobs.length === 0 ? (
+          <div style={{ textAlign: "center" as const, padding: "48px", color: "hsl(220 15% 45%)" }}>
+            <div style={{ fontSize: "48px", marginBottom: "12px" }}></div>
+            <p style={{ fontSize: "16px", color: "white", marginBottom: "6px" }}>No jobs found</p>
+            <p style={{ fontSize: "13px", marginBottom: "16px" }}>
+              {activeFilters.length > 0 ? "Try clearing some filters" : `Click Fetch Jobs to load "${fetchQuery}"`}
+            </p>
+            <div style={{ display: "flex", gap: "10px", justifyContent: "center" as const }}>
+              {activeFilters.length > 0 && <button onClick={clearFilters} style={{ background: "rgba(124,111,240,0.2)", color: "#9b8ff4", padding: "10px 20px", borderRadius: "8px", fontSize: "13px", fontWeight: "600", border: "1px solid rgba(124,111,240,0.3)", cursor: "pointer" }}>Clear Filters</button>}
+              <button onClick={fetchFreshJobs} disabled={fetching} style={{ background: "linear-gradient(135deg,#7c6ff0,#a78bfa)", color: "white", padding: "10px 20px", borderRadius: "8px", fontSize: "13px", fontWeight: "600", border: "none", cursor: "pointer" }}>Fetch Jobs Now</button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "12px", marginBottom: "20px" }}>
+              {paginatedJobs.map(job => {
+                const saved = savedIds.has(job.id)
+                const isSaving = savingId === job.id
+                const sc = srcColor[job.source] || srcColor.other
+                const mc = job.ai_match_score ? job.ai_match_score>=80?{bg:"rgba(34,197,94,0.15)",color:"#4ade80"}:job.ai_match_score>=60?{bg:"rgba(251,191,36,0.15)",color:"#fbbf24"}:{bg:"rgba(248,113,113,0.15)",color:"#f87171"} : null
+                return (
+                  <div key={job.id}
+                    style={{ background: "hsl(228 25% 8%)", border: `1px solid ${isFresh(job.posted_at)?"rgba(74,222,128,0.25)":"hsl(228 20% 14%)"}`, borderRadius: "12px", padding: "16px", transition: "all 0.15s" }}
+                    onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(124,111,240,0.4)";e.currentTarget.style.transform="translateY(-1px)"}}
+                    onMouseLeave={e=>{e.currentTarget.style.borderColor=isFresh(job.posted_at)?"rgba(74,222,128,0.25)":"hsl(228 20% 14%)";e.currentTarget.style.transform="translateY(0)"}}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "10px" }}>
+                      <div style={{ display: "flex", gap: "5px" }}>
+                        {isFresh(job.posted_at) && <span style={{ background: "rgba(34,197,94,0.15)", color: "#4ade80", fontSize: "10px", fontWeight: "700", padding: "2px 7px", borderRadius: "20px" }}>NEW</span>}
+                        {mc && <span style={{ background: mc.bg, color: mc.color, fontSize: "10px", fontWeight: "700", padding: "2px 7px", borderRadius: "20px" }}>{job.ai_match_score}%</span>}
+                      </div>
+                      <button onClick={()=>toggleSave(job)} disabled={isSaving}
+                        style={{ background: saved?"rgba(124,111,240,0.2)":"transparent", border: saved?"1px solid rgba(124,111,240,0.4)":"1px solid hsl(228 20% 22%)", borderRadius: "6px", padding: "3px 8px", cursor: "pointer", fontSize: "11px", color: saved?"#9b8ff4":"hsl(220 15% 50%)", fontWeight: "600" as const }}>
+                        {isSaving?"...":saved?"â˜…":"â˜† Save"}
+                      </button>
+                    </div>
+                    <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
+                      {job.company_logo
+                        ?<img src={job.company_logo} alt="" style={{ width:"34px",height:"34px",borderRadius:"8px",objectFit:"contain",background:"white",padding:"2px",flexShrink:0 }}/>
+                        :<div style={{ width:"34px",height:"34px",borderRadius:"8px",background:"rgba(124,111,240,0.2)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"14px",fontWeight:"700",color:"#9b8ff4",flexShrink:0 }}>{job.company?.[0]?.toUpperCase()}</div>
+                      }
+                      <div style={{ flex:1,minWidth:0 }}>
+                        <div style={{ fontSize:"13px",fontWeight:"600",color:"white",marginBottom:"2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" as const }}>{job.title}</div>
+                        <div style={{ fontSize:"11px",color:"hsl(220 15% 55%)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" as const }}>{job.company} Â· {job.location}</div>
+                      </div>
+                    </div>
+                    <div style={{ marginBottom:"10px" }}>
+                      <span style={badge(job.work_mode,job.work_mode==="remote"?"#4ade80":"#9b8ff4",job.work_mode==="remote"?"rgba(74,222,128,0.12)":"rgba(124,111,240,0.12)")}>{job.work_mode}</span>
+                      <span style={badge(job.job_type?.replace("_"," "),"#9b8ff4","rgba(124,111,240,0.12)")}>{job.job_type?.replace("_"," ")}</span>
+                      <span style={badge(job.source,sc.color,sc.bg)}>{job.source}</span>
+                      {job.salary_min&&<span style={badge(`$${Math.round(job.salary_min/1000)}k`,"#fbbf24","rgba(251,191,36,0.12)")}>${Math.round(job.salary_min/1000)}k</span>}
+                    </div>
+                    <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",gap:"6px" }}>
+                      <span style={{ fontSize:"11px",color:"hsl(220 15% 40%)" }}> {timeAgo(job.posted_at)}</span>
+                      <div style={{ display:"flex",gap:"5px" }}>
+                        <button onClick={()=>sendToResume(job)} style={{ background:"rgba(124,111,240,0.12)",color:"#9b8ff4",padding:"5px 8px",borderRadius:"6px",fontSize:"11px",fontWeight:"600",border:"1px solid rgba(124,111,240,0.2)",cursor:"pointer" }}>AI Resume</button>
+                        <button onClick={()=>oneClickApply(job)} style={{ background:"linear-gradient(135deg,#059669,#10b981)",color:"white",padding:"5px 8px",borderRadius:"6px",fontSize:"11px",fontWeight:"600",border:"none",cursor:"pointer" }}>âš¡ 1-Click</button>
+                        <button onClick={()=>applyAndTrack(job)} style={{ background:"linear-gradient(135deg,#7c6ff0,#a78bfa)",color:"white",padding:"5px 8px",borderRadius:"6px",fontSize:"11px",fontWeight:"600",border:"none",cursor:"pointer" }}>Apply â†’</button>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            {totalPages>1&&(
+              <div style={{ display:"flex",justifyContent:"center",alignItems:"center",gap:"6px",flexWrap:"wrap" as const }}>
+                <button onClick={()=>setCurrentPage(1)} disabled={currentPage===1} style={pageBtn(false,currentPage===1)}>Â«</button>
+                <button onClick={()=>setCurrentPage(p=>Math.max(1,p-1))} disabled={currentPage===1} style={pageBtn(false,currentPage===1)}>â€¹</button>
+                {Array.from({length:totalPages},(_,i)=>i+1).filter(p=>p===1||p===totalPages||Math.abs(p-currentPage)<=2).reduce((acc:(number|string)[],p,i,arr)=>{if(i>0&&(p as number)-(arr[i-1] as number)>1)acc.push("...");acc.push(p);return acc},[]).map((p,i)=>(<button key={i} onClick={()=>typeof p==="number"&&setCurrentPage(p)} disabled={p==="..."} style={pageBtn(p===currentPage,p==="...")}>{p}</button>))}
+                <button onClick={()=>setCurrentPage(p=>Math.min(totalPages,p+1))} disabled={currentPage===totalPages} style={pageBtn(false,currentPage===totalPages)}>â€º</button>
+                <button onClick={()=>setCurrentPage(totalPages)} disabled={currentPage===totalPages} style={pageBtn(false,currentPage===totalPages)}>Â»</button>
+                <span style={{ fontSize:"12px",color:"hsl(220 15% 40%)",marginLeft:"6px" }}>{currentPage}/{totalPages} Â· {filteredJobs.length} jobs</span>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  )
 }
