@@ -306,7 +306,7 @@ export default function JobsPage() {
 
   function clearFilters() {
     setWorkMode("all"); setJobType("all"); setDomain("All Domains")
-    setExperience("all"); setDateFilter("7"); setSalaryMin("")
+    setExperience("all"); setDateFilter("all"); setSalaryMin("")
     setTitleSearch(""); setSortBy("newest")
   }
 

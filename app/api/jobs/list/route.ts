@@ -15,7 +15,6 @@ export async function GET(request: Request) {
     let dbQuery = supabase
       .from("jobs")
       .select("*")
-      .eq("is_active", true)
       .order("posted_at", { ascending: false })
       .limit(2000)
 
@@ -29,9 +28,7 @@ export async function GET(request: Request) {
 
     if (userId && jobs.length > 0) {
       const { data: applied } = await supabase
-        .from("applications")
-        .select("job_id")
-        .eq("user_id", userId)
+        .from("applications").select("job_id").eq("user_id", userId)
       const appliedIds = new Set((applied || []).map((a: any) => a.job_id))
       jobs = jobs.filter((j: any) => !appliedIds.has(j.id))
     }
