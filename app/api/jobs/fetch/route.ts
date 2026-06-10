@@ -21,6 +21,9 @@ export async function GET(request: Request) {
   // Clean up old jobs first
   await supabase.from("jobs").delete().lt("posted_at", new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString())
   
+  // Clean up old jobs first
+  await supabase.from("jobs").delete().lt("posted_at", new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString())
+  
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
   const now = new Date().toISOString()
   const expires = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString()
