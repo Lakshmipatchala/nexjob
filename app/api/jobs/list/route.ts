@@ -12,15 +12,12 @@ export async function GET(request: Request) {
       process.env.SUPABASE_SECRET_KEY!
     )
 
-    const fifteenDaysAgo = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString()
-
     let dbQuery = supabase
       .from("jobs")
       .select("*")
-      .gte("posted_at", fifteenDaysAgo)
       .eq("is_active", true)
       .order("posted_at", { ascending: false })
-      .limit(1000)
+      .limit(2000)
 
     if (query && query.trim()) {
       dbQuery = dbQuery.ilike("title", `%${query.trim()}%`)
@@ -28,7 +25,6 @@ export async function GET(request: Request) {
 
     const { data, error } = await dbQuery
     if (error) throw error
-
     let jobs = data || []
 
     if (userId && jobs.length > 0) {

@@ -109,9 +109,9 @@ export default function JobsPage() {
     if (user) {
       setUserId(user.id)
       loadSavedViaAPI(user.id)
-      loadJobs(user.id, lastJobSearch || "", "US")
+      loadJobs(user.id, "", "US")
     } else {
-      loadJobs("", lastJobSearch || "", "US")
+      loadJobs("", "", "US")
     }
   }
 
