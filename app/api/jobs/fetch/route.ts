@@ -170,7 +170,7 @@ export async function GET(request: Request) {
           salary_min: null, salary_max: null, source: "jooble",
           source_url: j.link,
           description: j.snippet?.slice(0, 5000) || "",
-          external_id: `jooble_${Buffer.from(j.link).toString("base64").slice(0, 30)}`,
+          external_id: `jooble_${j.link.replace(/[^a-zA-Z0-9]/g, "").slice(-30)}`,
           posted_at: j.updated ? new Date(j.updated).toISOString() : now,
           is_active: true, expires_at: expires,
         })
@@ -236,7 +236,7 @@ export async function GET(request: Request) {
 
   // SOURCE 5: Himalayas
   try {
-    const res = await fetch(`https://himalayas.app/jobs/api?q=${encodeURIComponent(query)}&limit=100`)
+    const res = await fetch(`https://himalayas.app/jobs/api?q=${encodeURIComponent(query)}&limit=20`)
     const data = await res.json()
     let count = 0
     for (const j of (data.jobs || [])) {

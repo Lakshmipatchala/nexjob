@@ -16,7 +16,7 @@ export async function GET(request: Request) {
       .from("jobs")
       .select("*")
       .order("posted_at", { ascending: false })
-      .limit(2000)
+      .limit(5000)
 
     if (query && query.trim()) {
       dbQuery = dbQuery.ilike("title", `%${query.trim()}%`)
