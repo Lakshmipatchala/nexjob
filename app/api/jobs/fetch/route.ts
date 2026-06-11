@@ -22,6 +22,78 @@ export async function GET(request: Request) {
   const expires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
   const log: Record<string,number> = {}
 
+  // SOURCE 1a: Active Jobs DB (LinkedIn Indeed Glassdoor + 16 sites - separate quota)
+  try {
+    const jsearchCountry = country === "REMOTE" ? "us" : country.toLowerCase()
+    const searchQuery = country === "REMOTE" ? `${query} remote` : `${query} ${countryName}`
+    let count = 0
+    for (let page = 1; page <= 3; page++) {
+      try {
+        const res = await fetch(
+          `https://active-jobs-db.p.rapidapi.com/active-ats-7d?offset=${(page-1)*25}&limit=25&title_filter=${encodeURIComponent(query)}&location_filter=${country === "REMOTE" ? "" : encodeURIComponent(countryName)}`,
+          { headers: { "x-rapidapi-host": "active-jobs-db.p.rapidapi.com", "x-rapidapi-key": process.env.RAPIDAPI_KEY || "" } }
+        )
+        if (!res.ok) break
+        const data = await res.json()
+        const jobs = Array.isArray(data) ? data : []
+        if (jobs.length === 0) break
+        for (const j of jobs) {
+          if (!j.title || !j.url) continue
+          const isRemote = j.remote === true || j.title?.toLowerCase().includes("remote")
+          raw.push({
+            title: j.title, company: j.organization || "Unknown",
+            company_logo: j.organization_logo || null,
+            location: j.locations_raw?.[0] || (isRemote ? "Remote" : countryName),
+            work_mode: isRemote ? "remote" : "onsite",
+            job_type: j.employment_type?.toLowerCase().includes("full") ? "full_time" : "contract",
+            salary_min: null, salary_max: null,
+            source: j.source?.toLowerCase().includes("linkedin") ? "linkedin"
+              : j.source?.toLowerCase().includes("indeed") ? "indeed"
+              : j.source?.toLowerCase().includes("glassdoor") ? "glassdoor" : "other",
+            source_url: j.url,
+            description: j.text?.slice(0, 5000) || "",
+            external_id: `activejobs_${j.id || Buffer.from(j.url).toString("base64").slice(0,20)}`,
+            posted_at: j.date_posted || now,
+            is_active: true, expires_at: expires,
+          })
+          count++
+        }
+      } catch (e) { break }
+    }
+    log.activejobs = count
+  } catch (e) { log.activejobs = 0 }
+
+  // SOURCE 1b: LinkedIn Jobs Search API (separate quota)
+  try {
+    const res = await fetch(
+      `https://linkedin-jobs-search.p.rapidapi.com/?search=${encodeURIComponent(query)}&location=${encodeURIComponent(country === "REMOTE" ? "Worldwide" : countryName)}&page=1&pageSize=25`,
+      { headers: { "x-rapidapi-host": "linkedin-jobs-search.p.rapidapi.com", "x-rapidapi-key": process.env.RAPIDAPI_KEY || "" } }
+    )
+    if (res.ok) {
+      const data = await res.json()
+      let count = 0
+      for (const j of (Array.isArray(data) ? data : [])) {
+        if (!j.title || !j.job_url) continue
+        raw.push({
+          title: j.title, company: j.company || "Unknown",
+          company_logo: j.company_logo || null,
+          location: j.location || countryName,
+          work_mode: j.title?.toLowerCase().includes("remote") || j.location?.toLowerCase().includes("remote") ? "remote" : "onsite",
+          job_type: j.employment_type?.toLowerCase().includes("full") ? "full_time" : "contract",
+          salary_min: null, salary_max: null,
+          source: "linkedin",
+          source_url: j.job_url,
+          description: j.description?.slice(0, 5000) || "",
+          external_id: `linkedin_${j.job_id || Buffer.from(j.job_url).toString("base64").slice(0,20)}`,
+          posted_at: j.posted_date || now,
+          is_active: true, expires_at: expires,
+        })
+        count++
+      }
+      log.linkedin_direct = count
+    }
+  } catch (e) { log.linkedin_direct = 0 }
+
   // SOURCE 1: JSearch
   try {
     const jsearchCountry = country === "REMOTE" ? "us" : country.toLowerCase()
