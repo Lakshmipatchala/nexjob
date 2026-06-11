@@ -33,9 +33,10 @@ export async function GET(request: Request) {
           `https://jsearch.p.rapidapi.com/search?query=${encodeURIComponent(searchQuery)}&num_pages=1&page=${page}&country=${jsearchCountry}&date_posted=month`,
           { headers: { "x-rapidapi-host": "jsearch.p.rapidapi.com", "x-rapidapi-key": process.env.RAPIDAPI_KEY || "" } }
         )
-        if (!res.ok) break
+        if (!res.ok) { console.log("JSearch failed:", res.status, await res.text()); break }
         const data = await res.json()
         const jobs = data.data || []
+        console.log(`JSearch page ${page}: ${jobs.length} jobs, status: ${data.status}`)
         if (jobs.length === 0) break
         for (const j of jobs) {
           if (!j.job_title || !j.job_apply_link) continue
@@ -121,9 +122,10 @@ export async function GET(request: Request) {
             { headers: { "x-rapidapi-host": "jsearch.p.rapidapi.com", "x-rapidapi-key": rpKey || "" } }
           )
         }
-        if (!res.ok) break
+        if (!res.ok) { console.log("JSearch failed:", res.status, await res.text()); break }
         const data = await res.json()
         const jobs = data.data || []
+        console.log(`JSearch page ${page}: ${jobs.length} jobs, status: ${data.status}`)
         if (jobs.length === 0) break
         for (const j of jobs) {
           if (!j.job_title || !j.job_apply_link) continue
