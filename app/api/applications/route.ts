@@ -8,20 +8,15 @@ export async function GET(request: Request) {
       process.env.SUPABASE_SECRET_KEY!
     )
 
-    const authHeader = request.headers.get("Authorization") || ""
-    const token = authHeader.replace("Bearer ", "").trim()
-    if (!token || token === "null" || token === "undefined") {
-      return NextResponse.json({ applications: [] })
-    }
-
-    const { data: { user } } = await supabase.auth.getUser(token)
-    if (!user) return NextResponse.json({ applications: [] })
+    const { searchParams } = new URL(request.url)
+    const userId = searchParams.get("userId") || ""
+    if (!userId) return NextResponse.json({ applications: [] })
 
     const { data, error } = await supabase
       .from("applications")
-      .select("id, job_id, status, notes, applied_at, created_at, jobs(title, company, location, source_url, work_mode, source)")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
+      .select("id, job_id, status, notes, applied_at, created_at, job_data")
+      .eq("user_id", userId)
+      .order("applied_at", { ascending: false })
 
     if (error) throw error
     return NextResponse.json({ applications: data || [] })
@@ -37,33 +32,28 @@ export async function POST(request: Request) {
       process.env.SUPABASE_SECRET_KEY!
     )
 
-    const authHeader = request.headers.get("Authorization") || ""
-    const token = authHeader.replace("Bearer ", "").trim()
-    if (!token || token === "null" || token === "undefined") {
-      return NextResponse.json({ error: "Not logged in" }, { status: 401 })
-    }
-
-    const { data: { user } } = await supabase.auth.getUser(token)
-    if (!user) return NextResponse.json({ error: "Not logged in" }, { status: 401 })
-
-    const { job_id, status, notes } = await request.json()
+    const { userId, jobId, jobData, status, notes, job_id } = await request.json()
+    const user_id = userId
+    const finalJobId = jobId || job_id
+    if (!user_id || !finalJobId) return NextResponse.json({ error: "Missing userId or jobId" }, { status: 400 })
 
     const { data: existing } = await supabase
       .from("applications")
       .select("id")
-      .eq("user_id", user.id)
-      .eq("job_id", job_id)
+      .eq("user_id", user_id)
+      .eq("job_id", finalJobId)
       .maybeSingle()
 
     if (existing) {
       await supabase.from("applications")
-        .update({ status: status || "applied", updated_at: new Date().toISOString() })
+        .update({ status: status || "applied" })
         .eq("id", existing.id)
     } else {
       const { error } = await supabase.from("applications")
         .insert({
-          user_id: user.id,
-          job_id,
+          user_id: user_id,
+          job_id: finalJobId,
+          job_data: jobData || {},
           status: status || "applied",
           notes: notes || "",
           applied_at: new Date().toISOString()
@@ -84,21 +74,14 @@ export async function PATCH(request: Request) {
       process.env.SUPABASE_SECRET_KEY!
     )
 
-    const authHeader = request.headers.get("Authorization") || ""
-    const token = authHeader.replace("Bearer ", "").trim()
-    if (!token || token === "null" || token === "undefined") {
-      return NextResponse.json({ error: "Not logged in" }, { status: 401 })
-    }
-
-    const { data: { user } } = await supabase.auth.getUser(token)
-    if (!user) return NextResponse.json({ error: "Not logged in" }, { status: 401 })
-
     const { id, status, notes } = await request.json()
+    const updateData: any = {}
+    if (status !== undefined) updateData.status = status
+    if (notes !== undefined) updateData.notes = notes
     const { error } = await supabase
       .from("applications")
-      .update({ status, notes, updated_at: new Date().toISOString() })
+      .update(updateData)
       .eq("id", id)
-      .eq("user_id", user.id)
 
     if (error) throw error
     return NextResponse.json({ success: true })
