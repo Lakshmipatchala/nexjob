@@ -22,45 +22,50 @@ export async function GET(request: Request) {
   const expires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
   const log: Record<string,number> = {}
 
-  // SOURCE 1a: Active Jobs DB (LinkedIn Indeed Glassdoor + 16 sites - separate quota)
+  // SOURCE 1: JSearch (LinkedIn Indeed Glassdoor Monster Dice Lensa - WORKING)
   try {
     const jsearchCountry = country === "REMOTE" ? "us" : country.toLowerCase()
     const searchQuery = country === "REMOTE" ? `${query} remote` : `${query} ${countryName}`
     let count = 0
-    for (let page = 1; page <= 3; page++) {
+    for (let page = 1; page <= 5; page++) {
       try {
         const res = await fetch(
-          `https://active-jobs-db.p.rapidapi.com/active-ats-7d?offset=${(page-1)*25}&limit=25&title_filter=${encodeURIComponent(query)}&location_filter=${country === "REMOTE" ? "" : encodeURIComponent(countryName)}`,
-          { headers: { "x-rapidapi-host": "active-jobs-db.p.rapidapi.com", "x-rapidapi-key": process.env.RAPIDAPI_KEY || "" } }
+          `https://jsearch.p.rapidapi.com/search?query=${encodeURIComponent(searchQuery)}&num_pages=1&page=${page}&country=${jsearchCountry}&date_posted=month`,
+          { headers: { "x-rapidapi-host": "jsearch.p.rapidapi.com", "x-rapidapi-key": process.env.RAPIDAPI_KEY || "" } }
         )
         if (!res.ok) break
         const data = await res.json()
-        const jobs = Array.isArray(data) ? data : []
+        const jobs = data.data || []
         if (jobs.length === 0) break
         for (const j of jobs) {
-          if (!j.title || !j.url) continue
-          const isRemote = j.remote === true || j.title?.toLowerCase().includes("remote")
+          if (!j.job_title || !j.job_apply_link) continue
+          const isRemote = j.job_is_remote === true
+          const loc = j.job_city ? `${j.job_city}, ${j.job_state || j.job_country || countryName}` : isRemote ? "Remote" : countryName
           raw.push({
-            title: j.title, company: j.organization || "Unknown",
-            company_logo: j.organization_logo || null,
-            location: j.locations_raw?.[0] || (isRemote ? "Remote" : countryName),
+            title: j.job_title, company: j.employer_name || "Unknown",
+            company_logo: j.employer_logo || null, location: loc,
             work_mode: isRemote ? "remote" : "onsite",
-            job_type: j.employment_type?.toLowerCase().includes("full") ? "full_time" : "contract",
-            salary_min: null, salary_max: null,
-            source: j.source?.toLowerCase().includes("linkedin") ? "linkedin"
-              : j.source?.toLowerCase().includes("indeed") ? "indeed"
-              : j.source?.toLowerCase().includes("glassdoor") ? "glassdoor" : "other",
-            source_url: j.url,
-            description: j.text?.slice(0, 5000) || "",
-            external_id: `activejobs_${j.id || Buffer.from(j.url).toString("base64").slice(0,20)}`,
-            posted_at: j.date_posted || now,
+            job_type: j.job_employment_type?.toLowerCase().includes("full") ? "full_time" : "contract",
+            salary_min: j.job_min_salary || null, salary_max: j.job_max_salary || null,
+            source: j.job_publisher?.toLowerCase().includes("linkedin") ? "linkedin"
+              : j.job_publisher?.toLowerCase().includes("indeed") ? "indeed"
+              : j.job_publisher?.toLowerCase().includes("glassdoor") ? "glassdoor"
+              : j.job_publisher?.toLowerCase().includes("dice") ? "dice"
+              : j.job_publisher?.toLowerCase().includes("monster") ? "monster"
+              : j.job_publisher?.toLowerCase().includes("zip") ? "ziprecruiter"
+              : j.job_publisher?.toLowerCase().includes("naukri") ? "naukri"
+              : j.job_publisher?.toLowerCase().includes("lensa") ? "lensa" : "other",
+            source_url: j.job_apply_link,
+            description: j.job_description?.slice(0, 5000) || "",
+            external_id: `jsearch_${j.job_id}`,
+            posted_at: j.job_posted_at_datetime_utc || now,
             is_active: true, expires_at: expires,
           })
           count++
         }
       } catch (e) { break }
     }
-    log.activejobs = count
+    log.jsearch = count
   } catch (e) { log.activejobs = 0 }
 
   // SOURCE 1b: LinkedIn Jobs Search API (separate quota)
