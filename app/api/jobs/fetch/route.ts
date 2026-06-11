@@ -208,7 +208,7 @@ export async function GET(request: Request) {
 
   // SOURCE 4: Jobicy
   try {
-    const res = await fetch(`https://jobicy.com/api/v2/remote-jobs?count=100`)
+    const res = await fetch(`https://jobicy.com/api/v2/remote-jobs?count=50&jobType=full-time&tag=${encodeURIComponent(query.split(" ")[0])}`)
     const data = await res.json()
     const kw = query.toLowerCase()
     let count = 0
