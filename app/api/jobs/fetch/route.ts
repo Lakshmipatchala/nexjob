@@ -101,10 +101,21 @@ export async function GET(request: Request) {
     let count = 0
     for (let page = 1; page <= 5; page++) {
       try {
-        const res = await fetch(
-          `https://jsearch.p.rapidapi.com/search?query=${encodeURIComponent(searchQuery)}&num_pages=1&page=${page}&country=${jsearchCountry}&date_posted=month`,
-          { headers: { "x-rapidapi-host": "jsearch.p.rapidapi.com", "x-rapidapi-key": process.env.RAPIDAPI_KEY || "" } }
-        )
+        // Try OpenWebNinja first, fall back to RapidAPI
+        const owKey = process.env.OPENWEBNINJA_KEY
+        const rpKey = process.env.RAPIDAPI_KEY
+        let res
+        if (owKey) {
+          res = await fetch(
+            `https://jsearch.p.rapidapi.com/search?query=${encodeURIComponent(searchQuery)}&num_pages=1&page=${page}&country=${jsearchCountry}&date_posted=month`,
+            { headers: { "x-rapidapi-host": "jsearch.p.rapidapi.com", "x-api-key": owKey } }
+          )
+        } else {
+          res = await fetch(
+            `https://jsearch.p.rapidapi.com/search?query=${encodeURIComponent(searchQuery)}&num_pages=1&page=${page}&country=${jsearchCountry}&date_posted=month`,
+            { headers: { "x-rapidapi-host": "jsearch.p.rapidapi.com", "x-rapidapi-key": rpKey || "" } }
+          )
+        }
         if (!res.ok) break
         const data = await res.json()
         const jobs = data.data || []
